@@ -32,6 +32,7 @@ const T = {
 
 const FF = { fontFamily: "'IBM Plex Sans', sans-serif" }
 const FM = { fontFamily: "'IBM Plex Mono', monospace" }
+const P  = { background: T.panel, border: `1px solid ${T.border}`, borderRadius: 8, ...FF }
 
 const ZONE_DEFS = [
   { id: 0, name: "Bibwewadi", lat: 18.4582, lng: 73.8620, area: "8.2 km²",  pop: "142,000", radius: 2500 },
@@ -53,6 +54,99 @@ const SEVERITIES  = ["low", "medium", "high"]
 
 const API_BASE = "/api"
 const EVENT_TYPE_MAP = { drainage_failure: "flood" }
+
+// Sub-zone precise locations for targeted focusing (ready for real-time API coordinates)
+const ZONE_SUB_LOCATIONS = {
+  "Bibwewadi": {
+    flood: { lat: 18.4582, lng: 73.8620, zoom: 19, label: "Karve Road Drainage", type: "flood" },
+    traffic: { lat: 18.4585, lng: 73.8625, zoom: 19, label: "Bibwewadi Junction", type: "traffic" },
+    emergency: { lat: 18.4580, lng: 73.8618, zoom: 19, label: "Sahakarnagar Hospital Route", type: "emergency" },
+    overall: { lat: 18.4582, lng: 73.8620, zoom: 17, label: "Bibwewadi Center", type: "overall" }
+  },
+  "Katraj": {
+    flood: { lat: 18.4440, lng: 73.8635, zoom: 19, label: "Katraj Lake Overflow", type: "flood" },
+    traffic: { lat: 18.4435, lng: 73.8640, zoom: 19, label: "Pune-Satara Road", type: "traffic" },
+    emergency: { lat: 18.4445, lng: 73.8630, zoom: 19, label: "Katraj Hospital Access", type: "emergency" },
+    overall: { lat: 18.4437, lng: 73.8638, zoom: 17, label: "Katraj Center", type: "overall" }
+  },
+  "Hadapsar": {
+    flood: { lat: 18.4975, lng: 73.9260, zoom: 19, label: "Mutha River Banks", type: "flood" },
+    traffic: { lat: 18.4985, lng: 73.9255, zoom: 19, label: "Hadapsar IT Hub", type: "traffic" },
+    emergency: { lat: 18.4970, lng: 73.9265, zoom: 19, label: "Magarpatta Emergency Route", type: "emergency" },
+    overall: { lat: 18.4980, lng: 73.9258, zoom: 17, label: "Hadapsar Center", type: "overall" }
+  },
+  "Kothrud": {
+    flood: { lat: 18.5070, lng: 73.8080, zoom: 19, label: "Kothrud Drainage Canal", type: "flood" },
+    traffic: { lat: 18.5078, lng: 73.8085, zoom: 19, label: "Mumbai-Pune Highway", type: "traffic" },
+    emergency: { lat: 18.5065, lng: 73.8075, zoom: 19, label: "Kothrud Hospital Junction", type: "emergency" },
+    overall: { lat: 18.5074, lng: 73.8077, zoom: 17, label: "Kothrud Center", type: "overall" }
+  },
+  "Warje": {
+    flood: { lat: 18.4830, lng: 73.8120, zoom: 19, label: "Warje Bridge Underpass", type: "flood" },
+    traffic: { lat: 18.4835, lng: 73.8115, zoom: 19, label: "Warje Circle", type: "traffic" },
+    emergency: { lat: 18.4825, lng: 73.8125, zoom: 19, label: "Warje Emergency Access", type: "emergency" },
+    overall: { lat: 18.4832, lng: 73.8118, zoom: 17, label: "Warje Center", type: "overall" }
+  },
+  "Sinhagad": {
+    flood: { lat: 18.4320, lng: 73.8100, zoom: 19, label: "Sinhagad Road Drainage", type: "flood" },
+    traffic: { lat: 18.4330, lng: 73.8090, zoom: 19, label: "Sinhagad Road Main", type: "traffic" },
+    emergency: { lat: 18.4315, lng: 73.8105, zoom: 19, label: "Sinhagad Medical Access", type: "emergency" },
+    overall: { lat: 18.4326, lng: 73.8095, zoom: 17, label: "Sinhagad Center", type: "overall" }
+  },
+  "Pimpri": {
+    flood: { lat: 18.6285, lng: 73.8005, zoom: 19, label: "Pimpri Creek Area", type: "flood" },
+    traffic: { lat: 18.6275, lng: 73.8015, zoom: 19, label: "Pimpri PCMC Junction", type: "traffic" },
+    emergency: { lat: 18.6290, lng: 73.8000, zoom: 19, label: "Pimpri Hospital Route", type: "emergency" },
+    overall: { lat: 18.6279, lng: 73.8009, zoom: 17, label: "Pimpri Center", type: "overall" }
+  }
+}
+
+// Real-time API integration utilities (ready for live data feeds)
+const REAL_TIME_API = {
+  // Example structure for real-time incident data
+  processIncidentUpdate: (incidentData) => {
+    // incidentData structure for real-time APIs:
+    // {
+    //   id: "INC_12345",
+    //   type: "flood" | "traffic" | "emergency",
+    //   zone: "Bibwewadi",
+    //   coordinates: { lat: 18.4582, lng: 73.8620 },
+    //   severity: "high" | "medium" | "low",
+    //   timestamp: "2024-01-15T09:30:00Z",
+    //   status: "active" | "resolved"
+    // }
+
+    // Map incident to sub-location for precise focusing
+    const incident = {
+      zone: incidentData.zone,
+      metric: incidentData.type,
+      location: {
+        lat: incidentData.coordinates.lat,
+        lng: incidentData.coordinates.lng,
+        zoom: 19,
+        label: `${incidentData.type.toUpperCase()} - ${incidentData.zone}`,
+        type: incidentData.type,
+        timestamp: Date.now()
+      }
+    }
+
+    return incident
+  },
+
+  // WebSocket connection structure for real-time updates
+  connectToRealTimeUpdates: (onUpdate) => {
+    // Example WebSocket integration:
+    // const ws = new WebSocket('ws://your-api/live-events')
+    // ws.onmessage = (event) => {
+    //   const incidentData = JSON.parse(event.data)
+    //   const processedIncident = REAL_TIME_API.processIncidentUpdate(incidentData)
+    //   onUpdate(processedIncident)
+    // }
+    // return ws
+
+    console.log('Real-time API connection ready. Connect to your WebSocket/SSE endpoint here.')
+  }
+}
 
 const TILE_SIZE = 256
 
@@ -179,12 +273,13 @@ const CT = ({ active, payload, label }) => {
   )
 }
 
-function TileMap({ zones, selected, onSelect, mapLayer }) {
+function TileMap({ zones, selected, onSelect, mapLayer, externalFocus }) {
   const containerRef = useRef(null)
   const [size,    setSize]   = useState({ w: 0, h: 0 })
   const [center,  setCenter] = useState({ lat: 18.53, lng: 73.82 })
   const [zoom,    setZoom]   = useState(12)
   const [tooltip, setTooltip]= useState(null)
+  const [isTransitioning, setIsTransitioning] = useState(false)
   const dragRef = useRef(null)
 
   useEffect(() => {
@@ -197,6 +292,46 @@ function TileMap({ zones, selected, onSelect, mapLayer }) {
     setSize({ w: el.offsetWidth, h: el.offsetHeight })
     return () => ro.disconnect()
   }, [])
+
+  // Handle external focus updates with smooth transitions
+  useEffect(() => {
+    if (!externalFocus) return
+
+    setIsTransitioning(true)
+
+    // Smooth transition animation
+    const startCenter = { ...center }
+    const startZoom = zoom
+    const targetCenter = { lat: externalFocus.lat, lng: externalFocus.lng }
+    const targetZoom = externalFocus.zoom || 17
+
+    const duration = 800 // ms
+    const startTime = Date.now()
+
+    const animate = () => {
+      const elapsed = Date.now() - startTime
+      const progress = Math.min(elapsed / duration, 1)
+
+      // Easing function for smooth animation
+      const easeProgress = 1 - Math.pow(1 - progress, 3)
+
+      // Interpolate center coordinates
+      const newLat = startCenter.lat + (targetCenter.lat - startCenter.lat) * easeProgress
+      const newLng = startCenter.lng + (targetCenter.lng - startCenter.lng) * easeProgress
+      const newZoom = startZoom + (targetZoom - startZoom) * easeProgress
+
+      setCenter({ lat: newLat, lng: newLng })
+      setZoom(newZoom)
+
+      if (progress < 1) {
+        requestAnimationFrame(animate)
+      } else {
+        setIsTransitioning(false)
+      }
+    }
+
+    requestAnimationFrame(animate)
+  }, [externalFocus])
 
   const tiles = useMemo(() => buildTiles(center, zoom, size.w, size.h), [center, zoom, size])
 
@@ -213,7 +348,7 @@ function TileMap({ zones, selected, onSelect, mapLayer }) {
   }
   const onMouseUp = () => { dragRef.current = null }
 
-  const zoomIn  = e => { e.stopPropagation(); setZoom(z => Math.min(18, z + 1)) }
+  const zoomIn  = e => { e.stopPropagation(); setZoom(z => Math.min(20, z + 1)) }
   const zoomOut = e => { e.stopPropagation(); setZoom(z => Math.max(10, z - 1)) }
 
   useEffect(() => {
@@ -221,7 +356,7 @@ function TileMap({ zones, selected, onSelect, mapLayer }) {
     if (!el) return
     const handler = e => {
       e.preventDefault()
-      setZoom(z => e.deltaY < 0 ? Math.min(18, z + 1) : Math.max(10, z - 1))
+      setZoom(z => e.deltaY < 0 ? Math.min(20, z + 1) : Math.max(10, z - 1))
     }
     el.addEventListener('wheel', handler, { passive: false })
     return () => el.removeEventListener('wheel', handler)
@@ -300,6 +435,53 @@ function TileMap({ zones, selected, onSelect, mapLayer }) {
               </g>
             )
           })}
+
+          {/* GPS-style location marker for focused point */}
+          {externalFocus && zoom >= 16 && (() => {
+            const markerPos = latLngToScreen(externalFocus.lat, externalFocus.lng, center, zoom, size.w, size.h)
+
+            // Only show marker if it's visible on screen
+            if (markerPos.x < 0 || markerPos.x > size.w || markerPos.y < 0 || markerPos.y > size.h) {
+              return null
+            }
+
+            const markerColor = externalFocus.type === 'flood' ? T.blue :
+                               externalFocus.type === 'traffic' ? T.orange :
+                               externalFocus.type === 'emergency' ? T.red : T.green
+
+            return (
+              <g key="location-marker">
+                {/* Crosshair indicator */}
+                <g style={{ opacity: isTransitioning ? 0.6 : 1, transition: "all 0.3s" }}>
+                  <line x1={markerPos.x - 20} y1={markerPos.y} x2={markerPos.x + 20} y2={markerPos.y}
+                        stroke={markerColor} strokeWidth="2" strokeDasharray="4 2" />
+                  <line x1={markerPos.x} y1={markerPos.y - 20} x2={markerPos.x} y2={markerPos.y + 20}
+                        stroke={markerColor} strokeWidth="2" strokeDasharray="4 2" />
+                </g>
+
+                {/* Pulsing outer circle */}
+                <circle cx={markerPos.x} cy={markerPos.y} r="25" fill={markerColor} fillOpacity="0.2"
+                        style={{ animation: "pulse 2s infinite" }} />
+
+                {/* Main location pin */}
+                <g transform={`translate(${markerPos.x}, ${markerPos.y - 12})`}>
+                  {/* Pin shadow */}
+                  <path d="M 2 14 L 0 12 C 0 5.4 5.4 0 12 0 S 24 5.4 24 12 L 22 14 L 12 28 L 2 14 Z"
+                        fill="rgba(0,0,0,0.3)" />
+                  {/* Pin body */}
+                  <path d="M 0 12 C 0 5.4 5.4 0 12 0 S 24 5.4 24 12 L 12 26 L 0 12 Z"
+                        fill={markerColor} stroke="#fff" strokeWidth="2" />
+                  {/* Pin dot */}
+                  <circle cx="12" cy="12" r="6" fill="#fff" />
+                  <circle cx="12" cy="12" r="3" fill={markerColor} />
+                </g>
+
+                {/* Accuracy circle */}
+                <circle cx={markerPos.x} cy={markerPos.y} r="15" fill="none"
+                        stroke={markerColor} strokeWidth="1" strokeOpacity="0.5" strokeDasharray="2 3" />
+              </g>
+            )
+          })()}
         </svg>
       )}
 
@@ -330,6 +512,59 @@ function TileMap({ zones, selected, onSelect, mapLayer }) {
               <div style={{ fontWeight: mapLayer === 'flood' ? 700 : 400 }}>Flood    <span style={{ color: riskColor(r.flood) }}>{pct(r.flood)}%</span></div>
               <div style={{ fontWeight: mapLayer === 'traffic' ? 700 : 400 }}>Traffic  <span style={{ color: riskColor(r.traffic) }}>{pct(r.traffic)}%</span></div>
               <div style={{ fontWeight: mapLayer === 'emergency' ? 700 : 400 }}>Emergency <span style={{ color: riskColor(r.emergency) }}>{pct(r.emergency)}%</span></div>
+            </div>
+          </div>
+        )
+      })()}
+
+      {/* GPS-style location targeting panel */}
+      {externalFocus && !isTransitioning && (() => {
+        const focusColor = externalFocus.type === 'flood' ? T.blue :
+                          externalFocus.type === 'traffic' ? T.orange :
+                          externalFocus.type === 'emergency' ? T.red : T.green
+
+        const typeIcon = externalFocus.type === 'flood' ? '💧' :
+                        externalFocus.type === 'traffic' ? '🚗' :
+                        externalFocus.type === 'emergency' ? '🚑' : '📍'
+
+        return (
+          <div style={{
+            position: "absolute", top: 20, left: 20, zIndex: 400,
+            background: "rgba(255,255,255,0.95)", backdropFilter: "blur(10px)",
+            border: `2px solid ${focusColor}`, borderRadius: 12,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.2)",
+            animation: "fadeIn 0.3s ease-in-out", minWidth: 280
+          }}>
+            {/* Header */}
+            <div style={{
+              background: focusColor, color: "#fff", padding: "8px 16px",
+              borderRadius: "10px 10px 0 0", fontSize: 12, fontWeight: 700,
+              display: "flex", alignItems: "center", gap: 8
+            }}>
+              <span style={{ fontSize: 16 }}>{typeIcon}</span>
+              <span>TARGET LOCATION</span>
+            </div>
+
+            {/* Location details */}
+            <div style={{ padding: "12px 16px" }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 8 }}>
+                {externalFocus.label}
+              </div>
+
+              <div style={{ fontSize: 11, color: T.muted, fontFamily: "'IBM Plex Mono', monospace", lineHeight: 1.4 }}>
+                <div>📍 {externalFocus.lat.toFixed(6)}, {externalFocus.lng.toFixed(6)}</div>
+                <div>🔍 Zoom Level: {externalFocus.zoom}</div>
+                <div>⏰ {new Date().toLocaleTimeString()}</div>
+              </div>
+
+              {/* Accuracy indicator */}
+              <div style={{
+                marginTop: 8, padding: "6px 10px", background: focusColor + "15",
+                borderRadius: 6, border: `1px solid ${focusColor}40`,
+                fontSize: 11, fontWeight: 600, color: focusColor
+              }}>
+                🎯 HIGH PRECISION TARGETING
+              </div>
             </div>
           </div>
         )
@@ -532,6 +767,180 @@ function ResourceOptimizationPanel({ zoneName }) {
   )
 }
 
+// ── AI-Powered Predictive Analytics Panel ──────────────────────────────────────
+function PredictiveAnalyticsPanel({ zoneName, selectedMetric = "overall" }) {
+  const [forecast, setForecast] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [activeMetric, setActiveMetric] = useState(selectedMetric)
+
+  const METRICS = [
+    { key: 'overall', label: 'Overall Risk', color: T.blue, icon: '📊' },
+    { key: 'flood', label: 'Flood Risk', color: T.blue, icon: '💧' },
+    { key: 'traffic', label: 'Traffic Risk', color: T.orange, icon: '🚗' },
+    { key: 'emergency', label: 'Emergency Risk', color: T.red, icon: '🚑' }
+  ]
+
+  const fetchPredictiveForecast = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/predictive-forecast?zone=${encodeURIComponent(zoneName)}&metric=${activeMetric}&hours=24`)
+      if (res.ok) {
+        const data = await res.json()
+        setForecast(data)
+      }
+    } catch (e) {
+      console.error('Forecast error:', e)
+    }
+    setLoading(false)
+  }, [zoneName, activeMetric])
+
+  useEffect(() => {
+    if (zoneName) fetchPredictiveForecast()
+  }, [zoneName, activeMetric, fetchPredictiveForecast])
+
+  if (loading) return (
+    <div style={{...P, margin: 24, padding: 24, textAlign: "center"}}>
+      <div style={{fontSize: 14, color: T.muted, marginBottom: 12}}>🤖 AI Analyzing Patterns...</div>
+      <div style={{color: T.blue}}>Running Prophet + Anomaly Detection</div>
+    </div>
+  )
+
+  if (!forecast) return (
+    <div style={{...P, margin: 24, padding: 24, textAlign: "center", color: T.muted}}>
+      No predictive data available
+    </div>
+  )
+
+  const hasAnomalies = forecast.anomaly_detection?.upcoming_anomalies?.length > 0
+
+  return (
+    <div style={{...P, margin: 24}}>
+      <div style={{display: "flex", alignItems: "center", gap: 12, marginBottom: 20}}>
+        <h3 style={{fontSize: 16, fontWeight: 700, color: T.text, margin: 0}}>
+          🚀 AI Predictive Analytics
+        </h3>
+        <div style={{
+          padding: "4px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700,
+          background: T.green + "20", color: T.green
+        }}>
+          PROPHET + ANOMALY AI
+        </div>
+      </div>
+
+      {/* Metric Selector */}
+      <div style={{display: "flex", gap: 8, marginBottom: 16}}>
+        {METRICS.map(metric => (
+          <button
+            key={metric.key}
+            onClick={() => setActiveMetric(metric.key)}
+            style={{
+              padding: "6px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+              background: activeMetric === metric.key ? metric.color + "20" : T.bg,
+              color: activeMetric === metric.key ? metric.color : T.muted,
+              border: `1px solid ${activeMetric === metric.key ? metric.color : T.border}`,
+              cursor: "pointer", transition: "all 0.2s"
+            }}
+          >
+            {metric.icon} {metric.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Anomaly Alerts */}
+      {hasAnomalies && (
+        <div style={{
+          padding: "12px 16px", marginBottom: 16, borderRadius: 6,
+          background: T.red + "10", border: `1px solid ${T.red}40`
+        }}>
+          <div style={{fontSize: 12, fontWeight: 700, color: T.red, marginBottom: 8, display: "flex", alignItems: "center", gap: 6}}>
+            🚨 ANOMALY DETECTED - IMMEDIATE ATTENTION REQUIRED
+          </div>
+
+          {forecast.anomaly_detection.upcoming_anomalies.slice(0, 3).map((anomaly, i) => (
+            <div key={i} style={{
+              fontSize: 11, color: T.text, marginBottom: 4,
+              display: "flex", justifyContent: "space-between"
+            }}>
+              <span>⏰ {anomaly.timestamp}</span>
+              <span>📈 {(anomaly.predicted_value * 100).toFixed(1)}%</span>
+              <span style={{
+                color: anomaly.severity === 'high' ? T.red : T.orange,
+                fontWeight: 700, textTransform: "uppercase"
+              }}>
+                {anomaly.severity}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Forecast Chart */}
+      <div style={{marginBottom: 16}}>
+        <div style={{fontSize: 12, color: T.muted, marginBottom: 8}}>
+          📊 24-Hour Risk Prediction with Confidence Intervals
+        </div>
+
+        <ResponsiveContainer width="100%" height={150}>
+          <LineChart data={forecast.predictions.slice(0, 12)}>
+            <CartesianGrid strokeDasharray="3 3" stroke={T.borderL} />
+            <XAxis dataKey="timestamp" fontSize={10} stroke={T.muted} />
+            <YAxis domain={[0, 1]} tickFormatter={pct} fontSize={10} stroke={T.muted} />
+            <Tooltip content={({ active, payload, label }) => {
+              if (!active || !payload?.length) return null
+              const data = payload[0].payload
+              return (
+                <div style={{
+                  background: T.panel, border: `1px solid ${T.border}`, padding: "8px 12px",
+                  borderRadius: 4, fontSize: 11, boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
+                }}>
+                  <div style={{fontWeight: 700, marginBottom: 4}}>Time: {label}</div>
+                  <div>Predicted: {pct(data.predicted_value)}%</div>
+                  <div>Range: {pct(data.lower_bound)}% - {pct(data.upper_bound)}%</div>
+                  <div>Confidence: ±{pct(data.confidence_interval)}%</div>
+                </div>
+              )
+            }} />
+
+            {/* Confidence band */}
+            <Line
+              dataKey="upper_bound"
+              stroke={activeMetric === 'flood' ? T.blue : activeMetric === 'traffic' ? T.orange : T.red}
+              strokeOpacity={0.3}
+              strokeDasharray="2 3"
+              dot={false}
+            />
+            <Line
+              dataKey="lower_bound"
+              stroke={activeMetric === 'flood' ? T.blue : activeMetric === 'traffic' ? T.orange : T.red}
+              strokeOpacity={0.3}
+              strokeDasharray="2 3"
+              dot={false}
+            />
+
+            {/* Main prediction line */}
+            <Line
+              dataKey="predicted_value"
+              stroke={activeMetric === 'flood' ? T.blue : activeMetric === 'traffic' ? T.orange : T.red}
+              strokeWidth={2}
+              dot={{ r: 3 }}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Model Performance */}
+      <div style={{
+        display: "flex", justifyContent: "space-between", fontSize: 11,
+        color: T.muted, padding: "8px 12px", background: T.bg, borderRadius: 4
+      }}>
+        <span>📈 Training Samples: {forecast.model_performance.training_samples}</span>
+        <span>🎯 Avg Uncertainty: ±{pct(forecast.model_performance.forecast_uncertainty)}%</span>
+        <span>🔬 Method: {forecast.anomaly_detection.anomaly_method.toUpperCase()}</span>
+      </div>
+    </div>
+  )
+}
+
 // ── Intervention Controls ──────────────────────────────────────────────────────
 function InterventionControls({ zoneName, onRiskUpdate }) {
   const [activeInterventions, setActiveInterventions] = useState(new Set())
@@ -611,6 +1020,287 @@ function InterventionControls({ zoneName, onRiskUpdate }) {
   )
 }
 
+// ── Computer Vision Infrastructure Assessment ──────────────────────────────────
+function ComputerVisionPanel({ zoneName }) {
+  const [analysis, setAnalysis] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+
+  const analyzeImage = useCallback(async (file) => {
+    setLoading(true)
+    setAnalysis(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('zone', zoneName)
+
+      const res = await fetch(`${API_BASE}/analyze-infrastructure-image?zone=${encodeURIComponent(zoneName)}`, {
+        method: 'POST',
+        body: formData
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        setAnalysis(data)
+      } else {
+        throw new Error('Analysis failed')
+      }
+    } catch (e) {
+      console.error('CV analysis error:', e)
+      setAnalysis({ analysis_status: 'error', error_message: 'Analysis failed' })
+    }
+    setLoading(false)
+  }, [zoneName])
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault()
+    setDragOver(false)
+
+    const files = Array.from(e.dataTransfer.files)
+    const imageFile = files.find(f => f.type.startsWith('image/'))
+
+    if (imageFile) {
+      analyzeImage(imageFile)
+    }
+  }, [analyzeImage])
+
+  const handleFileSelect = useCallback((e) => {
+    const file = e.target.files[0]
+    if (file && file.type.startsWith('image/')) {
+      analyzeImage(file)
+    }
+  }, [analyzeImage])
+
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault()
+    setDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e) => {
+    e.preventDefault()
+    setDragOver(false)
+  }, [])
+
+  if (loading) {
+    return (
+      <div style={{...P, margin: 24, padding: 24, textAlign: "center"}}>
+        <div style={{fontSize: 14, color: T.muted, marginBottom: 12}}>🤖 Analyzing Infrastructure...</div>
+        <div style={{color: T.blue}}>Running YOLO + Damage Classification AI</div>
+        <div style={{marginTop: 12, padding: "8px 12px", background: T.blue + "15", borderRadius: 4, fontSize: 11, color: T.blue, fontWeight: 600}}>
+          Computer Vision Processing...
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{...P, margin: 24}}>
+      <div style={{display: "flex", alignItems: "center", gap: 12, marginBottom: 20}}>
+        <h3 style={{fontSize: 16, fontWeight: 700, color: T.text, margin: 0}}>
+          📱 Computer Vision Assessment
+        </h3>
+        <div style={{
+          padding: "4px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700,
+          background: T.orange + "20", color: T.orange
+        }}>
+          YOLO + AI DAMAGE ANALYSIS
+        </div>
+      </div>
+
+      {!analysis && (
+        <div
+          style={{
+            border: `2px dashed ${dragOver ? T.blue : T.border}`,
+            borderRadius: 8, padding: "32px 24px", textAlign: "center",
+            background: dragOver ? T.blue + "05" : T.bg,
+            cursor: "pointer", transition: "all 0.3s"
+          }}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onClick={() => document.getElementById('file-input').click()}
+        >
+          <input
+            id="file-input"
+            type="file"
+            accept="image/*"
+            onChange={handleFileSelect}
+            style={{display: "none"}}
+          />
+
+          <div style={{fontSize: 48, marginBottom: 16}}>📸</div>
+          <div style={{fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 8}}>
+            Upload Infrastructure Image
+          </div>
+          <div style={{fontSize: 12, color: T.muted, lineHeight: 1.4}}>
+            Drag & drop an image or click to select<br/>
+            Supports: JPG, PNG, WEBP • Max 10MB<br/>
+            AI will detect damage automatically
+          </div>
+
+          {dragOver && (
+            <div style={{
+              marginTop: 12, padding: "8px 12px", background: T.blue + "20",
+              borderRadius: 4, fontSize: 11, color: T.blue, fontWeight: 600
+            }}>
+              Drop image to analyze with YOLO AI
+            </div>
+          )}
+        </div>
+      )}
+
+      {analysis && analysis.analysis_status === 'success' && (
+        <div>
+          {/* Overall Assessment */}
+          <div style={{
+            padding: "16px", marginBottom: 16, borderRadius: 6,
+            background: analysis.overall_assessment.risk_level === 'CRITICAL' ? T.red + "10" :
+                       analysis.overall_assessment.risk_level === 'HIGH' ? T.orange + "10" :
+                       T.green + "10",
+            border: `1px solid ${
+              analysis.overall_assessment.risk_level === 'CRITICAL' ? T.red + "40" :
+              analysis.overall_assessment.risk_level === 'HIGH' ? T.orange + "40" :
+              T.green + "40"
+            }`
+          }}>
+            <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12}}>
+              <div style={{fontSize: 14, fontWeight: 700, color: T.text}}>
+                📊 Overall Infrastructure Assessment
+              </div>
+              <div style={{
+                padding: "4px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700,
+                background: analysis.overall_assessment.risk_level === 'CRITICAL' ? T.red + "20" :
+                           analysis.overall_assessment.risk_level === 'HIGH' ? T.orange + "20" :
+                           T.green + "20",
+                color: analysis.overall_assessment.risk_level === 'CRITICAL' ? T.red :
+                       analysis.overall_assessment.risk_level === 'HIGH' ? T.orange :
+                       T.green
+              }}>
+                {analysis.overall_assessment.risk_level} RISK
+              </div>
+            </div>
+
+            <div style={{fontSize: 11, color: T.muted, marginBottom: 8}}>
+              Damage Score: {(analysis.overall_assessment.damage_score * 100).toFixed(1)}% •
+              Critical Issues: {analysis.overall_assessment.critical_issues} •
+              Total Detections: {analysis.overall_assessment.total_detections}
+            </div>
+
+            <div style={{fontSize: 12, fontWeight: 600, color: T.text}}>
+              Priority: {analysis.overall_assessment.priority.replace(/_/g, ' ')}
+            </div>
+          </div>
+
+          {/* Annotated Image */}
+          {analysis.annotated_image && (
+            <div style={{marginBottom: 16}}>
+              <div style={{fontSize: 12, color: T.muted, marginBottom: 8}}>
+                🖼️ AI-Annotated Image with Damage Detection
+              </div>
+              <img
+                src={analysis.annotated_image}
+                alt="Annotated infrastructure"
+                style={{
+                  width: "100%", maxHeight: 300, objectFit: "contain",
+                  borderRadius: 6, border: `1px solid ${T.border}`
+                }}
+              />
+            </div>
+          )}
+
+          {/* Damage Detections */}
+          {analysis.damage_detections?.length > 0 && (
+            <div style={{marginBottom: 16}}>
+              <div style={{fontSize: 12, color: T.muted, marginBottom: 8}}>
+                🔍 Detected Infrastructure Issues ({analysis.damage_detections.length})
+              </div>
+
+              {analysis.damage_detections.slice(0, 3).map((detection, i) => (
+                <div key={i} style={{
+                  padding: "8px 12px", marginBottom: 8, borderRadius: 4,
+                  background: T.bg, border: `1px solid ${T.border}`,
+                  display: "flex", justifyContent: "space-between", alignItems: "center"
+                }}>
+                  <div>
+                    <div style={{fontSize: 12, fontWeight: 600, color: T.text}}>
+                      {detection.object_type.replace(/_/g, ' ')} - {detection.damage_type.replace(/_/g, ' ')}
+                    </div>
+                    <div style={{fontSize: 10, color: T.muted}}>
+                      {detection.damage_description}
+                    </div>
+                  </div>
+                  <div style={{textAlign: "right"}}>
+                    <div style={{fontSize: 11, color: T.orange, fontWeight: 600}}>
+                      {detection.estimated_repair_cost}
+                    </div>
+                    <div style={{fontSize: 10, color: T.muted}}>
+                      {(detection.severity_score * 100).toFixed(0)}% severity
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Recommendations */}
+          {analysis.recommendations?.length > 0 && (
+            <div>
+              <div style={{fontSize: 12, color: T.muted, marginBottom: 8}}>
+                💡 AI Recommendations
+              </div>
+
+              {analysis.recommendations.slice(0, 4).map((rec, i) => (
+                <div key={i} style={{
+                  fontSize: 11, color: T.text, marginBottom: 4,
+                  padding: "4px 8px", background: T.bg, borderLeft: `3px solid ${T.blue}`,
+                  borderRadius: 2
+                }}>
+                  {rec}
+                </div>
+              ))}
+            </div>
+          )}
+
+          <button
+            onClick={() => setAnalysis(null)}
+            style={{
+              marginTop: 16, padding: "8px 16px", borderRadius: 6,
+              background: T.blue, color: "#fff", border: "none",
+              fontSize: 12, fontWeight: 600, cursor: "pointer"
+            }}
+          >
+            📸 Analyze Another Image
+          </button>
+        </div>
+      )}
+
+      {analysis && analysis.analysis_status === 'error' && (
+        <div style={{
+          padding: "16px", borderRadius: 6, textAlign: "center",
+          background: T.red + "10", border: `1px solid ${T.red}40`
+        }}>
+          <div style={{fontSize: 14, color: T.red, fontWeight: 600, marginBottom: 8}}>
+            Analysis Failed
+          </div>
+          <div style={{fontSize: 12, color: T.muted, marginBottom: 12}}>
+            {analysis.error_message}
+          </div>
+          <button
+            onClick={() => setAnalysis(null)}
+            style={{
+              padding: "6px 12px", borderRadius: 4, background: T.red,
+              color: "#fff", border: "none", fontSize: 11, cursor: "pointer"
+            }}
+          >
+            Try Again
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Event Timeline ─────────────────────────────────────────────────────────────
 function EventTimeline({ zoneName }) {
   const [timeline, setTimeline] = useState(null)
@@ -674,6 +1364,342 @@ function EventTimeline({ zoneName }) {
   )
 }
 
+// ── 3D City Visualization ──────────────────────────────────────────────────────
+function City3DVisualization({ zones, selectedZone, mapLayer, onZoneSelect }) {
+  const canvasRef = useRef(null)
+  const sceneRef = useRef(null)
+  const rendererRef = useRef(null)
+  const cameraRef = useRef(null)
+  const animationFrameRef = useRef(null)
+  const [isInitialized, setIsInitialized] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  // Initialize Three.js scene
+  useEffect(() => {
+    const initScene = async () => {
+      if (!canvasRef.current) return
+
+      try {
+        // Dynamically import Three.js to avoid SSR issues
+        const THREE = await import('three')
+
+        // Scene setup
+        const scene = new THREE.Scene()
+        scene.fog = new THREE.Fog(0x87CEEB, 1000, 4000) // Atmospheric fog
+
+        // Camera setup (cinematic angle)
+        const camera = new THREE.PerspectiveCamera(
+          60, // FOV for cinematic feel
+          canvasRef.current.clientWidth / canvasRef.current.clientHeight,
+          0.1,
+          5000
+        )
+        camera.position.set(0, 600, 800) // Elevated cinematic view
+        camera.lookAt(0, 0, 0)
+
+        // Renderer setup with high quality
+        const renderer = new THREE.WebGLRenderer({
+          canvas: canvasRef.current,
+          antialias: true,
+          alpha: true,
+          powerPreference: "high-performance"
+        })
+        renderer.setSize(canvasRef.current.clientWidth, canvasRef.current.clientHeight)
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+        renderer.shadowMap.enabled = true
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap
+        renderer.outputColorSpace = THREE.SRGBColorSpace
+
+        // Enhanced lighting setup
+        const ambientLight = new THREE.AmbientLight(0x87CEEB, 0.4) // Soft blue ambient
+        scene.add(ambientLight)
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8)
+        directionalLight.position.set(100, 400, 200)
+        directionalLight.castShadow = true
+        directionalLight.shadow.mapSize.width = 2048
+        directionalLight.shadow.mapSize.height = 2048
+        scene.add(directionalLight)
+
+        // City ground plane with grid
+        const groundGeometry = new THREE.PlaneGeometry(2000, 2000, 20, 20)
+        const groundMaterial = new THREE.MeshLambertMaterial({
+          color: 0x2a3440,
+          transparent: true,
+          opacity: 0.8
+        })
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial)
+        ground.rotation.x = -Math.PI / 2
+        ground.receiveShadow = true
+        scene.add(ground)
+
+        // City grid lines
+        const gridHelper = new THREE.GridHelper(2000, 40, 0x4a5568, 0x374151)
+        gridHelper.material.transparent = true
+        gridHelper.material.opacity = 0.3
+        scene.add(gridHelper)
+
+        // Create city blocks for each zone
+        const cityBlocks = createCityBlocks(zones, THREE)
+        cityBlocks.forEach(block => scene.add(block))
+
+        // Particle system for risk visualization
+        const particles = createRiskParticles(zones, THREE)
+        scene.add(particles)
+
+        // Store references
+        sceneRef.current = scene
+        rendererRef.current = renderer
+        cameraRef.current = camera
+
+        setIsInitialized(true)
+        setLoading(false)
+
+        // Animation loop
+        const animate = () => {
+          animationFrameRef.current = requestAnimationFrame(animate)
+
+          // Smooth camera rotation
+          const time = Date.now() * 0.0001
+          camera.position.x = Math.cos(time) * 600
+          camera.position.z = Math.sin(time) * 600
+          camera.lookAt(0, 0, 0)
+
+          // Update particle effects
+          if (particles && particles.children) {
+            particles.children.forEach((particleSystem, i) => {
+              if (particleSystem.material && particleSystem.material.uniforms) {
+                particleSystem.material.uniforms.time.value = time * 10
+              }
+            })
+          }
+
+          renderer.render(scene, camera)
+        }
+
+        animate()
+
+      } catch (error) {
+        console.error('3D Scene initialization error:', error)
+        setLoading(false)
+      }
+    }
+
+    initScene()
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current)
+      }
+    }
+  }, [zones])
+
+  // Update zone colors based on risk levels
+  useEffect(() => {
+    if (!sceneRef.current || !isInitialized) return
+
+    sceneRef.current.children.forEach(child => {
+      if (child.userData && child.userData.zoneId !== undefined) {
+        const zone = zones[child.userData.zoneId]
+        if (zone) {
+          const risks = getRisks(zone)
+          const riskValue = risks[mapLayer] || 0
+
+          // Update building color based on risk
+          let color
+          if (riskValue > 0.7) color = 0xff4444      // Red
+          else if (riskValue > 0.5) color = 0xff8800 // Orange
+          else if (riskValue > 0.3) color = 0xffdd00 // Yellow
+          else color = 0x44ff44                      // Green
+
+          if (child.material) {
+            child.material.color.setHex(color)
+            child.material.emissive.setHex(color)
+            child.material.emissiveIntensity = riskValue * 0.3
+          }
+        }
+      }
+    })
+  }, [zones, mapLayer, isInitialized])
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (!canvasRef.current || !cameraRef.current || !rendererRef.current) return
+
+      const width = canvasRef.current.clientWidth
+      const height = canvasRef.current.clientHeight
+
+      cameraRef.current.aspect = width / height
+      cameraRef.current.updateProjectionMatrix()
+      rendererRef.current.setSize(width, height)
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [isInitialized])
+
+  const createCityBlocks = (zones, THREE) => {
+    const blocks = []
+
+    zones.forEach((zone, index) => {
+      // Calculate position based on lat/lng (simplified projection)
+      const x = (zone.lng - 73.82) * 40000
+      const z = (zone.lat - 18.48) * 40000
+
+      // Building height based on population
+      const population = parseInt(zone.pop.replace(/,/g, '')) || 100000
+      const height = Math.max(20, (population / 10000) * 30)
+
+      // Create building geometry
+      const geometry = new THREE.CylinderGeometry(25, 35, height, 8)
+      const material = new THREE.MeshPhongMaterial({
+        transparent: true,
+        opacity: 0.8,
+        shininess: 100
+      })
+
+      const building = new THREE.Mesh(geometry, material)
+      building.position.set(x, height / 2, z)
+      building.castShadow = true
+      building.receiveShadow = true
+      building.userData = { zoneId: index, zoneName: zone.name }
+
+      // Add zone label
+      const labelCanvas = document.createElement('canvas')
+      const labelContext = labelCanvas.getContext('2d')
+      labelCanvas.width = 256
+      labelCanvas.height = 64
+      labelContext.font = '24px Arial'
+      labelContext.fillStyle = '#ffffff'
+      labelContext.textAlign = 'center'
+      labelContext.fillText(zone.name, 128, 40)
+
+      const labelTexture = new THREE.CanvasTexture(labelCanvas)
+      const labelMaterial = new THREE.MeshBasicMaterial({
+        map: labelTexture,
+        transparent: true
+      })
+      const labelGeometry = new THREE.PlaneGeometry(60, 15)
+      const label = new THREE.Mesh(labelGeometry, labelMaterial)
+      label.position.set(x, height + 20, z)
+      label.lookAt(0, height + 20, 100)
+
+      blocks.push(building, label)
+    })
+
+    return blocks
+  }
+
+  const createRiskParticles = (zones, THREE) => {
+    const particleGroup = new THREE.Group()
+
+    zones.forEach((zone, index) => {
+      const x = (zone.lng - 73.82) * 40000
+      const z = (zone.lat - 18.48) * 40000
+
+      // Particle system for risk visualization
+      const particleCount = 100
+      const positions = new Float32Array(particleCount * 3)
+      const colors = new Float32Array(particleCount * 3)
+
+      for (let i = 0; i < particleCount; i++) {
+        positions[i * 3] = x + (Math.random() - 0.5) * 100
+        positions[i * 3 + 1] = Math.random() * 100
+        positions[i * 3 + 2] = z + (Math.random() - 0.5) * 100
+
+        colors[i * 3] = Math.random()
+        colors[i * 3 + 1] = Math.random() * 0.5
+        colors[i * 3 + 2] = 1
+      }
+
+      const particleGeometry = new THREE.BufferGeometry()
+      particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+      particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+
+      const particleMaterial = new THREE.PointsMaterial({
+        size: 2,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.6,
+        blending: THREE.AdditiveBlending
+      })
+
+      const particles = new THREE.Points(particleGeometry, particleMaterial)
+      particleGroup.add(particles)
+    })
+
+    return particleGroup
+  }
+
+  if (loading) {
+    return (
+      <div style={{
+        width: "100%", height: "400px", display: "flex", alignItems: "center",
+        justifyContent: "center", background: T.bg, borderRadius: 8,
+        border: `1px solid ${T.border}`
+      }}>
+        <div style={{ textAlign: "center" }}>
+          <div style={{ fontSize: 18, marginBottom: 12 }}>🌆</div>
+          <div style={{ fontSize: 14, color: T.text, fontWeight: 600, marginBottom: 8 }}>
+            Initializing 3D City Model
+          </div>
+          <div style={{ fontSize: 12, color: T.muted }}>
+            Loading Three.js WebGL Renderer...
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{
+      width: "100%", height: "400px", position: "relative",
+      borderRadius: 8, border: `1px solid ${T.border}`,
+      overflow: "hidden", background: "linear-gradient(to bottom, #87CEEB, #98D8E8)"
+    }}>
+      <canvas
+        ref={canvasRef}
+        style={{ width: "100%", height: "100%", display: "block" }}
+      />
+
+      {/* 3D Controls Overlay */}
+      <div style={{
+        position: "absolute", top: 16, right: 16, zIndex: 100,
+        background: "rgba(0,0,0,0.7)", backdropFilter: "blur(10px)",
+        borderRadius: 8, padding: "8px 12px"
+      }}>
+        <div style={{ color: "#fff", fontSize: 11, fontWeight: 700, marginBottom: 4 }}>
+          🌆 3D CITY MODEL
+        </div>
+        <div style={{ color: "#aaa", fontSize: 10 }}>
+          Auto-rotating • Risk heatmaps • WebGL
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div style={{
+        position: "absolute", bottom: 16, left: 16, zIndex: 100,
+        background: "rgba(255,255,255,0.9)", backdropFilter: "blur(10px)",
+        borderRadius: 6, padding: "8px 12px", fontSize: 10
+      }}>
+        <div style={{ marginBottom: 4, fontWeight: 700, color: T.text }}>Risk Legend:</div>
+        {[
+          ['🟢 Low', '< 30%'],
+          ['🟡 Medium', '30-50%'],
+          ['🟠 High', '50-70%'],
+          ['🔴 Critical', '> 70%']
+        ].map(([label, range]) => (
+          <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+            <span>{label}</span>
+            <span style={{ color: T.muted }}>{range}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Main Dashboard App ───────────────────────────────────────────────────────
 export default function App() {
   const [zones,       setZones]       = useState(seedZones)
@@ -684,6 +1710,7 @@ export default function App() {
   const [showInject,  setShowInject]  = useState(false)
   const [newEv,       setNewEv]       = useState({ type: "rainfall", severity: "high" })
   const [interventionRisks, setInterventionRisks] = useState(null)
+  const [mapFocus,    setMapFocus]    = useState(null)
 
   const zone  = zones[sel]
   const risks = getRisks(zone, interventionRisks)
@@ -696,20 +1723,39 @@ export default function App() {
     setMapLayer(metric)
     setTab("Overview")
 
-    // Find zone with highest risk for this metric
+    // Find zone with highest risk for this metric and get precise sub-location
     let maxRisk = 0
     let targetZoneIndex = sel
+    let targetLocation = null
+
     zones.forEach((z, i) => {
       const zoneRisk = getRisks(z, interventionRisks)[metric]
       if (zoneRisk > maxRisk) {
         maxRisk = zoneRisk
         targetZoneIndex = i
+
+        // Get specific sub-location for this zone and metric
+        const zoneSubLocations = ZONE_SUB_LOCATIONS[z.name]
+        if (zoneSubLocations) {
+          targetLocation = zoneSubLocations[metric]
+        }
       }
     })
 
     // Switch to the zone with highest risk for this metric
     if (targetZoneIndex !== sel) {
       setSel(targetZoneIndex)
+    }
+
+    // Focus map on specific sub-location with smooth animation
+    if (targetLocation) {
+      setMapFocus({
+        lat: targetLocation.lat,
+        lng: targetLocation.lng,
+        zoom: targetLocation.zoom,
+        label: targetLocation.label,
+        timestamp: Date.now() // Forces re-focus even if same coordinates
+      })
     }
   }, [zones, sel, interventionRisks])
 
@@ -774,9 +1820,6 @@ export default function App() {
   }, [sel, newEv, zones, fetchZoneRisk])
 
   const TABS = ["Overview", "Analysis", "Resources", "Reports"]
-  const FF   = { fontFamily: "'IBM Plex Sans', sans-serif" }
-  const FM   = { fontFamily: "'IBM Plex Mono', monospace" }
-  const P    = { background: T.panel, border: `1px solid ${T.border}`, borderRadius: 8, ...FF }
 
   return (
     <div style={{ ...FF, background: T.bg, height: "100vh", color: T.text, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -854,7 +1897,7 @@ export default function App() {
               </div>
 
               <div style={{ flex: 1, position: "relative" }}>
-                <TileMap zones={zones} selected={sel} onSelect={setSel} mapLayer={mapLayer} />
+                <TileMap zones={zones} selected={sel} onSelect={setSel} mapLayer={mapLayer} externalFocus={mapFocus} />
                 
                 <div style={{ position: "absolute", top: 20, left: 20, zIndex: 400, background: T.panel, padding: "16px 20px", borderRadius: 8, border: `1px solid ${T.border}`, boxShadow: "0 4px 16px rgba(0,0,0,0.08)" }}>
                   <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: T.label, letterSpacing: 1, textTransform: "uppercase" }}>{mapLayer} THREAT</div>
@@ -984,10 +2027,12 @@ export default function App() {
               <div style={{ flex: 1, padding: "0 32px 32px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start" }}>
                 <div>
                   <ResourceOptimizationPanel zoneName={zone.name} />
+                  <PredictiveAnalyticsPanel zoneName={zone.name} selectedMetric={mapLayer} />
                   <EventTimeline zoneName={zone.name} />
                 </div>
                 <div>
                   <InterventionControls zoneName={zone.name} onRiskUpdate={handleInterventionUpdate} />
+                  <ComputerVisionPanel zoneName={zone.name} />
                 </div>
               </div>
             </div>
@@ -1113,6 +2158,10 @@ export default function App() {
 
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+        @keyframes fadeIn { 0%{opacity:0; transform: translateY(-10px)} 100%{opacity:1; transform: translateY(0)} }
+        @keyframes pinBounce { 0%{transform: translateY(-5px)} 50%{transform: translateY(0px)} 100%{transform: translateY(-5px)} }
+        @keyframes accuracyPulse { 0%{r:10; opacity:0.8} 50%{r:18; opacity:0.3} 100%{r:10; opacity:0.8} }
+        @keyframes crosshairSpin { 0%{transform: rotate(0deg)} 100%{transform: rotate(360deg)} }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         button:focus, input:focus { outline: none; }
         ::-webkit-scrollbar { width: 8px; height: 8px; }
