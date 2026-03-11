@@ -119,7 +119,16 @@ function computeRisks(events = [], interventions = []) {
   return { flood, traffic, emergency, overall: flood * 0.35 + traffic * 0.40 + emergency * 0.25 }
 }
 
-function getRisks(zone) {
+function getRisks(zone, interventionRisks = null) {
+  if (interventionRisks) {
+    const overall = interventionRisks.flooding * 0.35 + interventionRisks.traffic * 0.40 + interventionRisks.emergency_delay * 0.25
+    return {
+      flood: interventionRisks.flooding,
+      traffic: interventionRisks.traffic,
+      emergency: interventionRisks.emergency_delay,
+      overall
+    }
+  }
   return zone.apiRisks || computeRisks(zone.events, zone.interventions)
 }
 
@@ -473,6 +482,198 @@ function SidebarZonesList({ zones, sel, setSel, mapLayer }) {
   )
 }
 
+// ── Resource Optimization Panel ─────────────────────────────────────────────────
+function ResourceOptimizationPanel({ zoneName }) {
+  const [deployment, setDeployment] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  const fetchOptimalDeployment = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/optimal-deployment?resources=pumps:2,ambulances:1,traffic_units:2`)
+      if (res.ok) {
+        const data = await res.json()
+        setDeployment(data)
+      }
+    } catch (_) {}
+    setLoading(false)
+  }, [])
+
+  useEffect(() => {
+    if (zoneName) fetchOptimalDeployment()
+  }, [zoneName, fetchOptimalDeployment])
+
+  if (loading) return <div style={{...T.P, padding: 24, textAlign: "center"}}>Optimizing deployment...</div>
+
+  if (!deployment) return <div style={{...T.P, padding: 24}}>No deployment data available.</div>
+
+  return (
+    <div style={{...T.P, margin: 24}}>
+      <h3 style={{fontSize: 16, fontWeight: 700, marginBottom: 20, color: T.text}}>Optimal Resource Deployment</h3>
+      <div style={{fontSize: 13, color: T.muted, marginBottom: 16}}>
+        Expected citywide risk reduction: <span style={{color: T.green, fontWeight: 700}}>{deployment.expected_citywide_risk_reduction}%</span>
+      </div>
+      <div style={{display: "flex", flexDirection: "column", gap: 12}}>
+        {deployment.plan?.map((item, i) => (
+          <div key={i} style={{
+            display: "flex", alignItems: "center", gap: 12, padding: "12px 16px",
+            background: T.bg, borderRadius: 6, border: `1px solid ${T.border}`
+          }}>
+            <div style={{
+              padding: "6px 10px", background: T.blue + "20", color: T.blue,
+              borderRadius: 4, fontSize: 11, fontWeight: 700, textTransform: "uppercase"
+            }}>{item.resource}</div>
+            <span style={{fontSize: 14, color: T.text, flex: 1}}>{item.zone}</span>
+            <span style={{fontSize: 12, color: T.green, fontWeight: 600}}>+{item.benefit_expected}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ── Intervention Controls ──────────────────────────────────────────────────────
+function InterventionControls({ zoneName, onRiskUpdate }) {
+  const [activeInterventions, setActiveInterventions] = useState(new Set())
+  const [simulationResults, setSimulationResults] = useState(null)
+
+  const INTERVENTIONS = [
+    { id: "deploy_pump", label: "Deploy Pump", icon: "🔧", color: T.blue },
+    { id: "close_road", label: "Close Road", icon: "🚫", color: T.orange },
+    { id: "dispatch_ambulance", label: "Dispatch Ambulance", icon: "🚑", color: T.red }
+  ]
+
+  const toggleIntervention = useCallback(async (interventionId) => {
+    const newActive = new Set(activeInterventions)
+    const isActivating = !newActive.has(interventionId)
+
+    if (isActivating) {
+      newActive.add(interventionId)
+      try {
+        const res = await fetch(`${API_BASE}/simulate-intervention`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ zone: zoneName, intervention: interventionId })
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setSimulationResults(data)
+          onRiskUpdate?.(data.after_intervention)
+        }
+      } catch (_) {}
+    } else {
+      newActive.delete(interventionId)
+      setSimulationResults(null)
+      onRiskUpdate?.(null)
+    }
+
+    setActiveInterventions(newActive)
+  }, [activeInterventions, zoneName, onRiskUpdate])
+
+  return (
+    <div style={{...T.P, margin: 24}}>
+      <h3 style={{fontSize: 16, fontWeight: 700, marginBottom: 20, color: T.text}}>Impact Simulation</h3>
+
+      <div style={{display: "flex", flexDirection: "column", gap: 12, marginBottom: 20}}>
+        {INTERVENTIONS.map(intervention => (
+          <button
+            key={intervention.id}
+            onClick={() => toggleIntervention(intervention.id)}
+            style={{
+              display: "flex", alignItems: "center", gap: 12, padding: "12px 16px",
+              background: activeInterventions.has(intervention.id) ? intervention.color + "20" : T.bg,
+              border: `2px solid ${activeInterventions.has(intervention.id) ? intervention.color : T.border}`,
+              borderRadius: 8, cursor: "pointer", transition: "all 0.2s",
+              color: activeInterventions.has(intervention.id) ? intervention.color : T.text
+            }}
+          >
+            <span style={{fontSize: 18}}>{intervention.icon}</span>
+            <span style={{fontSize: 14, fontWeight: 600, flex: 1}}>{intervention.label}</span>
+            <span style={{fontSize: 12, fontWeight: 700}}>
+              {activeInterventions.has(intervention.id) ? "ON" : "OFF"}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {simulationResults && (
+        <div style={{padding: 16, background: T.green + "10", borderRadius: 6, border: `1px solid ${T.green}40`}}>
+          <div style={{fontSize: 13, fontWeight: 700, color: T.green, marginBottom: 8}}>Risk Reduction Impact:</div>
+          {Object.entries(simulationResults.benefit).map(([key, value]) => (
+            <div key={key} style={{fontSize: 12, color: T.text, display: "flex", justifyContent: "space-between"}}>
+              <span>{key.replace('_', ' ')}</span>
+              <span style={{color: T.green, fontWeight: 600}}>-{value}%</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Event Timeline ─────────────────────────────────────────────────────────────
+function EventTimeline({ zoneName }) {
+  const [timeline, setTimeline] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  const fetchTimeline = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/zone-timeline?zone=${encodeURIComponent(zoneName)}`)
+      if (res.ok) {
+        const data = await res.json()
+        setTimeline(data)
+      }
+    } catch (_) {}
+    setLoading(false)
+  }, [zoneName])
+
+  useEffect(() => {
+    if (zoneName) fetchTimeline()
+  }, [zoneName, fetchTimeline])
+
+  if (loading) return <div style={{...T.P, padding: 24, textAlign: "center"}}>Loading timeline...</div>
+
+  if (!timeline || !timeline.predicted_events?.length) {
+    return <div style={{...T.P, padding: 24, textAlign: "center", color: T.muted}}>No timeline events predicted</div>
+  }
+
+  return (
+    <div style={{...T.P, margin: 24}}>
+      <div style={{display: "flex", alignItems: "center", gap: 12, marginBottom: 20}}>
+        <h3 style={{fontSize: 16, fontWeight: 700, color: T.text}}>Event Timeline</h3>
+        <div style={{
+          padding: "4px 8px", borderRadius: 4, fontSize: 11, fontWeight: 700,
+          background: timeline.escalation_risk_score === "HIGH" ? T.red + "20" :
+                     timeline.escalation_risk_score === "MEDIUM" ? T.orange + "20" : T.green + "20",
+          color: timeline.escalation_risk_score === "HIGH" ? T.red :
+                timeline.escalation_risk_score === "MEDIUM" ? T.orange : T.green
+        }}>
+          {timeline.escalation_risk_score} RISK
+        </div>
+      </div>
+
+      <div style={{display: "flex", flexDirection: "column", gap: 8}}>
+        {timeline.predicted_events.map((event, i) => (
+          <div key={i} style={{
+            display: "flex", alignItems: "center", gap: 16, padding: "12px 16px",
+            background: T.bg, borderRadius: 6, border: `1px solid ${T.border}`
+          }}>
+            <div style={{
+              padding: "6px 10px", background: T.blue + "20", color: T.blue,
+              borderRadius: 4, fontSize: 12, fontWeight: 700, fontFamily: "'IBM Plex Mono', monospace"
+            }}>{event.predicted_time}</div>
+            <span style={{fontSize: 14, color: T.text, flex: 1}}>{event.event_name}</span>
+            <span style={{fontSize: 13, color: riskColor(event.probability), fontWeight: 600}}>
+              {Math.round(event.probability * 100)}%
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // ── Main Dashboard App ───────────────────────────────────────────────────────
 export default function App() {
   const [zones,       setZones]       = useState(seedZones)
@@ -482,9 +683,35 @@ export default function App() {
   const [now,         setNow]         = useState(new Date())
   const [showInject,  setShowInject]  = useState(false)
   const [newEv,       setNewEv]       = useState({ type: "rainfall", severity: "high" })
-  
+  const [interventionRisks, setInterventionRisks] = useState(null)
+
   const zone  = zones[sel]
-  const risks = getRisks(zone)
+  const risks = getRisks(zone, interventionRisks)
+
+  const handleInterventionUpdate = useCallback((newRisks) => {
+    setInterventionRisks(newRisks)
+  }, [])
+
+  const handleGraphNodeClick = useCallback((metric) => {
+    setMapLayer(metric)
+    setTab("Overview")
+
+    // Find zone with highest risk for this metric
+    let maxRisk = 0
+    let targetZoneIndex = sel
+    zones.forEach((z, i) => {
+      const zoneRisk = getRisks(z, interventionRisks)[metric]
+      if (zoneRisk > maxRisk) {
+        maxRisk = zoneRisk
+        targetZoneIndex = i
+      }
+    })
+
+    // Switch to the zone with highest risk for this metric
+    if (targetZoneIndex !== sel) {
+      setSel(targetZoneIndex)
+    }
+  }, [zones, sel, interventionRisks])
 
   const fetchZoneRisk = useCallback(async (zoneName, zoneIdx) => {
     try {
@@ -546,12 +773,9 @@ export default function App() {
     fetchZoneRisk(zoneName, sel)
   }, [sel, newEv, zones, fetchZoneRisk])
 
-  const handleGraphNodeClick = (metric) => {
-    setMapLayer(metric)
-    setTab("Overview")
-  }
-
-  const TABS = ["Overview", "Analysis", "Reports"]
+  const TABS = ["Overview", "Analysis", "Resources", "Reports"]
+  const FF   = { fontFamily: "'IBM Plex Sans', sans-serif" }
+  const FM   = { fontFamily: "'IBM Plex Mono', monospace" }
   const P    = { background: T.panel, border: `1px solid ${T.border}`, borderRadius: 8, ...FF }
 
   return (
@@ -745,7 +969,32 @@ export default function App() {
           </>
         )}
 
-        {/* 3. REPORTS TAB */}
+        {/* 3. RESOURCES TAB */}
+        {tab === "Resources" && (
+          <div style={{ flex: 1, display: "flex" }}>
+            <SidebarZonesList zones={zones} sel={sel} setSel={setSel} mapLayer={mapLayer} />
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflowY: "auto" }}>
+              <div style={{ padding: "32px 32px 0", borderBottom: `1px solid ${T.border}` }}>
+                <h1 style={{ fontSize: 24, fontWeight: 700, color: T.text, marginBottom: 8 }}>Resource Management</h1>
+                <p style={{ fontSize: 14, color: T.muted, marginBottom: 24 }}>
+                  Optimize resource deployment and simulate intervention impacts for {zone.name}
+                </p>
+              </div>
+
+              <div style={{ flex: 1, padding: "0 32px 32px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start" }}>
+                <div>
+                  <ResourceOptimizationPanel zoneName={zone.name} />
+                  <EventTimeline zoneName={zone.name} />
+                </div>
+                <div>
+                  <InterventionControls zoneName={zone.name} onRiskUpdate={handleInterventionUpdate} />
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 4. REPORTS TAB */}
         {tab === "Reports" && (
           <div style={{ flex: 1, overflowY: "auto", padding: "40px" }}>
             <div style={{ maxWidth: 1000, margin: "0 auto" }}>
