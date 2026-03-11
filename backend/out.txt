@@ -1,0 +1,17 @@
+Starting Stage-12 tests...
+
+--- Test 1: Incident Creation ---
+[19:56:16] ingestion: rainfall event received from weather_api
+[19:56:16] ingestion: event normalized
+[19:56:16] ingestion: event EVT_198e51e4 stored
+[19:56:16] ingestion: Event dispatched to causal engine: EVT_198e51e4
+[19:56:16] causal_graph: Causal graph service initialized for zone: Bibwewadi_Auditable
+[19:56:16] causal_graph: Injected evidence: Rainfall = High (zone: Bibwewadi_Auditable)
+[19:56:16] ingestion: Event dispatched to simulation engine: EVT_198e51e4
+
+--- Test 2: Prediction Logging ---
+
+--- Test 3: Action Logging ---
+
+--- Test 4 & 5: Incident Retrieval & Data Integrity ---
+History Response: 200 {'zone': 'Bibwewadi_Auditable', 'incidents': [{'incident_id': 'INC_A8F5D8F1', 'zone': 'Bibwewadi_Auditable', 'timestamp': '2026-04-12T09:00:00', 'event_type': 'rainfall', 'prediction': {'Flooding': {'probability': 0.57, 'confidence': 0.79}}, 'confidence': 0.79, 'recommended_action': 'deploy_pump', 'human_decision': 'approved', 'final_action': 'deploy_pump'}, {'incident_id': 'INC_D1905928', 'zone': 'Bibwewadi_Auditable', 'timestamp': '2026-04-12T09:00:00', 'event_type': 'rainfall', 'prediction': None, 'confidence': None, 'recommended_action': None, 'human_decision': None, 'final_action': None}, {'incident_id': 'INC_B0ABCB85', 'zone': 'Bibwewadi_Auditable', 'timestamp': '2026-04-12T09:00:00', 'event_type': 'rainfall', 'prediction': None, 'confidence': None, 'recommended_action': None, 'human_decision': None, 'final_action': None}, {'incident_id': 'INC_1AEE0432', 'zone': 'Bibwewadi_Auditable', 'timestamp': '2026-04-12T09:00:00', 'event_type': 'rainfall', 'prediction': None, 'confidence': None, 'recommended_action': None, 'human_decision': None, 'final_action': None}]}
