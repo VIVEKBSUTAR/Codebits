@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 import base64
 from typing import Dict, List, Tuple, Optional
+from datetime import datetime
 import json
 from pathlib import Path
 import warnings
@@ -120,7 +121,7 @@ class InfrastructureDamageAssessment:
                 "damage_detections": damage_analysis,
                 "recommendations": recommendations,
                 "annotated_image": annotated_image_b64,
-                "analysis_timestamp": "2024-01-15T14:30:00Z"  # In production, use real timestamp
+                "analysis_timestamp": datetime.now().isoformat()
             }
 
         except Exception as e:
@@ -359,57 +360,85 @@ class InfrastructureDamageClassifier:
         }
 
     def _simulate_damage_analysis(self, bbox: List[int], obj_class: str, image: Image.Image) -> Dict:
-        """Simulate realistic damage analysis"""
-        # Get image region for analysis
+        """Analyze damage using actual pixel data from the detected region"""
         x1, y1, x2, y2 = bbox
         width, height = image.size
 
-        # Calculate some basic features for simulation
+        # Clamp to image bounds
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(width, x2), min(height, y2)
+
+        # Extract the image region and analyze actual pixel data
+        region = np.array(image.crop((x1, y1, x2, y2)))
         region_size = (x2 - x1) * (y2 - y1)
-        relative_size = region_size / (width * height)
+        relative_size = region_size / max(1, width * height)
 
-        # Simulate damage based on object class and characteristics
-        import random
-        random.seed(x1 + y1)  # Reproducible randomness based on position
+        # Analyze pixel statistics for damage indicators
+        if region.size > 0:
+            # Color variance: high variance often indicates damage/cracks
+            color_std = np.std(region, axis=(0, 1)).mean() / 255.0
+            # Dark patches: often indicate water/structural damage
+            gray = np.mean(region, axis=2) if region.ndim == 3 else region
+            dark_ratio = np.mean(gray < 80) if gray.size > 0 else 0.0
+            # Edge density: more edges = more texture/cracks
+            edge_score = np.mean(np.abs(np.diff(gray.astype(float), axis=0))) / 255.0 if gray.shape[0] > 1 else 0.0
+            # Color channel imbalance (e.g. rust = high red)
+            if region.ndim == 3 and region.shape[2] >= 3:
+                r_dom = np.mean(region[:,:,0]) - np.mean(region[:,:,1:3])
+                rust_score = max(0, r_dom / 255.0)
+            else:
+                rust_score = 0.0
+        else:
+            color_std, dark_ratio, edge_score, rust_score = 0.2, 0.1, 0.1, 0.0
 
-        damage_types = {
+        # Combine pixel features into a severity estimate
+        pixel_severity = (
+            0.25 * min(1.0, color_std * 3) +  # Color variance
+            0.25 * min(1.0, dark_ratio * 2) +  # Dark patches
+            0.30 * min(1.0, edge_score * 4) +  # Edge density
+            0.20 * min(1.0, rust_score * 5)    # Rust/discoloration
+        )
+
+        # Determine damage type from pixel analysis and object class
+        damage_map = {
             'infrastructure_element': [
-                ('structural_damage', 0.7, "Visible cracks and deterioration", "$15,000", "high"),
-                ('surface_damage', 0.4, "Surface wear and aging", "$3,000", "medium"),
-                ('water_damage', 0.6, "Water infiltration damage", "$8,000", "high")
+                ('structural_damage', 'Visible cracks and structural deterioration detected', '$15,000', 'high'),
+                ('water_damage', 'Water infiltration and moisture damage visible', '$8,000', 'high'),
+                ('surface_damage', 'Surface wear with minor cosmetic deterioration', '$3,000', 'medium'),
             ],
             'transport_infrastructure': [
-                ('road_damage', 0.5, "Pavement cracking and potholes", "$5,000", "medium"),
-                ('structural_damage', 0.8, "Bridge/overpass structural issues", "$25,000", "critical"),
-                ('surface_damage', 0.3, "Normal wear patterns", "$2,000", "low")
+                ('road_damage', 'Pavement cracking, potholes, or surface failure', '$5,000', 'medium'),
+                ('structural_damage', 'Structural deficiency in transport infrastructure', '$25,000', 'critical'),
+                ('surface_damage', 'Normal surface wear patterns observed', '$2,000', 'low'),
             ],
             'traffic_infrastructure': [
-                ('electrical_damage', 0.6, "Signal malfunction detected", "$1,500", "high"),
-                ('structural_damage', 0.4, "Post/sign structural issues", "$800", "medium"),
-                ('surface_damage', 0.2, "Minor cosmetic damage", "$200", "low")
-            ]
+                ('electrical_damage', 'Signal or electrical component degradation', '$1,500', 'high'),
+                ('structural_damage', 'Post or sign structural compromise', '$800', 'medium'),
+                ('surface_damage', 'Minor cosmetic wear on traffic infrastructure', '$200', 'low'),
+            ],
         }
 
-        # Select damage type based on class
-        if obj_class in damage_types:
-            damage_options = damage_types[obj_class]
+        options = damage_map.get(obj_class, [
+            ('general_damage', 'Infrastructure deterioration detected by AI', '$5,000', 'medium')
+        ])
+
+        # Select damage type based on severity: higher severity -> more serious damage
+        if pixel_severity > 0.6:
+            idx = 0  # Most serious
+        elif pixel_severity > 0.35:
+            idx = min(1, len(options) - 1)
         else:
-            # Generic infrastructure damage
-            damage_options = [
-                ('general_damage', 0.5, "Infrastructure deterioration", "$5,000", "medium")
-            ]
+            idx = min(2, len(options) - 1)
 
-        # Select damage with some randomness
-        selected_damage = random.choice(damage_options)
-        damage_type, base_severity, description, repair_cost, urgency = selected_damage
+        damage_type, description, repair_cost, urgency = options[idx]
 
-        # Adjust severity based on size and position
-        severity_modifier = min(0.3, relative_size * 2)  # Larger objects get higher severity
-        final_severity = min(1.0, base_severity + severity_modifier + random.uniform(-0.2, 0.2))
+        # Size modifier: larger damaged areas are more severe
+        size_modifier = min(0.15, relative_size * 1.5)
+        final_severity = max(0.05, min(0.98, pixel_severity + size_modifier))
 
         return {
             'damage_type': damage_type,
-            'severity_score': final_severity,
+            'severity_score': round(float(final_severity), 3),
             'description': description,
             'repair_cost': repair_cost,
             'urgency': urgency

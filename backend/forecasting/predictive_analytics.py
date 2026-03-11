@@ -250,10 +250,10 @@ class TimeSeriesForecaster:
 
     def _get_historical_risk_data(self, zone: str, metric: str) -> List[float]:
         """
-        Simulate historical risk data based on current Bayesian inference
-        In production, this would query actual historical database
+        Generate historical risk data based on current Bayesian inference and real time.
+        Produces time-varying patterns that change with each request based on current hour.
+        In production, this would query actual historical database.
         """
-        # Get current risk from Bayesian model
         try:
             graph = get_causal_graph(zone)
             current_probs = graph.run_inference()
@@ -267,7 +267,6 @@ class TimeSeriesForecaster:
             }.get(metric, 'Flooding')
 
             if prob_key == 'overall':
-                # Calculate overall risk
                 base_risk = (
                     current_probs.get('Flooding', 0.2) * 0.35 +
                     current_probs.get('TrafficCongestion', 0.3) * 0.40 +
@@ -276,28 +275,71 @@ class TimeSeriesForecaster:
             else:
                 base_risk = current_probs.get(prob_key, 0.2)
 
-            # Generate synthetic historical data with realistic patterns
-            np.random.seed(hash(zone + metric) % 2**32)  # Reproducible randomness
+            # Use current time to create a seed that changes every hour
+            now = datetime.now()
+            time_seed = int(now.timestamp() // 3600)  # Changes hourly
+            zone_offset = hash(zone + metric) % 1000
+            rng = np.random.RandomState(time_seed + zone_offset)
 
-            # 48 hours of historical data (hourly)
+            # Zone-specific characteristics that affect patterns
+            zone_profiles = {
+                'Bibwewadi':  {'flood_bias': 0.05, 'traffic_peak': 0.15, 'volatility': 0.06},
+                'Katraj':     {'flood_bias': 0.08, 'traffic_peak': 0.12, 'volatility': 0.07},
+                'Hadapsar':   {'flood_bias': 0.03, 'traffic_peak': 0.20, 'volatility': 0.05},
+                'Kothrud':    {'flood_bias': 0.04, 'traffic_peak': 0.18, 'volatility': 0.04},
+                'Warje':      {'flood_bias': 0.06, 'traffic_peak': 0.10, 'volatility': 0.05},
+                'Sinhagad':   {'flood_bias': 0.07, 'traffic_peak': 0.08, 'volatility': 0.06},
+                'Pimpri':     {'flood_bias': 0.04, 'traffic_peak': 0.22, 'volatility': 0.07},
+                'Chinchwad':  {'flood_bias': 0.05, 'traffic_peak': 0.19, 'volatility': 0.06},
+                'Hinjewadi':  {'flood_bias': 0.02, 'traffic_peak': 0.25, 'volatility': 0.05},
+                'Wakad':      {'flood_bias': 0.03, 'traffic_peak': 0.16, 'volatility': 0.05},
+                'Baner':      {'flood_bias': 0.03, 'traffic_peak': 0.14, 'volatility': 0.04},
+                'Shivajinagar': {'flood_bias': 0.06, 'traffic_peak': 0.20, 'volatility': 0.08},
+            }
+            profile = zone_profiles.get(zone, {'flood_bias': 0.04, 'traffic_peak': 0.15, 'volatility': 0.05})
+
+            # Metric-specific daily patterns
+            metric_patterns = {
+                'flood': lambda h: profile['flood_bias'] * (1.5 if 14 <= h <= 18 else 0.5),  # Afternoon rain
+                'traffic': lambda h: profile['traffic_peak'] * (1.8 if 8 <= h <= 10 or 17 <= h <= 20 else 0.4),  # Rush hours
+                'emergency': lambda h: 0.05 * (1.3 if 22 <= h or h <= 4 else 0.7),  # Night incidents
+                'overall': lambda h: 0.08 * (1.2 if 8 <= h <= 10 or 17 <= h <= 20 else 0.8),
+            }
+            pattern_fn = metric_patterns.get(metric, metric_patterns['overall'])
+
+            # Generate 48 hours of data ending at current time
             historical_data = []
+            current_hour = now.hour
+
+            # Random walk component for realistic auto-correlation
+            walk = 0.0
             for i in range(48):
-                # Add daily patterns and random variation
-                hour_of_day = i % 24
-                daily_factor = 1 + 0.3 * np.sin(2 * np.pi * hour_of_day / 24)  # Daily cycle
+                hour_of_day = (current_hour - 48 + i) % 24
 
-                # Add random walk component
-                trend = base_risk + 0.1 * np.sin(i * 0.1) + np.random.normal(0, 0.05)
+                # Base risk from Bayesian model
+                val = base_risk
 
-                # Combine factors and ensure bounds [0, 1]
-                risk_value = max(0, min(1, trend * daily_factor))
-                historical_data.append(risk_value)
+                # Add time-of-day pattern specific to metric
+                val += pattern_fn(hour_of_day)
+
+                # Random walk for auto-correlated noise
+                walk += rng.normal(0, profile['volatility'] * 0.3)
+                walk *= 0.92  # Mean reversion
+                val += walk
+
+                # Small i.i.d. noise
+                val += rng.normal(0, profile['volatility'] * 0.5)
+
+                # Ensure bounds [0, 1]
+                historical_data.append(float(max(0.01, min(0.95, val))))
 
             return historical_data
 
         except Exception:
-            # Fallback to simple synthetic data
-            return [0.2 + 0.1 * np.random.normal() for _ in range(24)]
+            # Fallback with time-varying data
+            now = datetime.now()
+            rng = np.random.RandomState(int(now.timestamp() // 3600))
+            return [float(max(0.01, min(0.95, 0.25 + 0.08 * np.sin(2 * np.pi * i / 24) + rng.normal(0, 0.04)))) for i in range(48)]
 
     def _prepare_prophet_data(self, historical_data: List[float]) -> pd.DataFrame:
         """Prepare data in Prophet's required format"""

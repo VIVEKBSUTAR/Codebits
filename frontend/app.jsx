@@ -738,12 +738,12 @@ function ResourceOptimizationPanel({ zoneName }) {
     if (zoneName) fetchOptimalDeployment()
   }, [zoneName, fetchOptimalDeployment])
 
-  if (loading) return <div style={{...T.P, padding: 24, textAlign: "center"}}>Optimizing deployment...</div>
+  if (loading) return <div style={{...P, padding: 24, textAlign: "center"}}>Optimizing deployment...</div>
 
-  if (!deployment) return <div style={{...T.P, padding: 24}}>No deployment data available.</div>
+  if (!deployment) return <div style={{...P, padding: 24}}>No deployment data available.</div>
 
   return (
-    <div style={{...T.P, margin: 24}}>
+    <div style={{...P, margin: 24}}>
       <h3 style={{fontSize: 16, fontWeight: 700, marginBottom: 20, color: T.text}}>Optimal Resource Deployment</h3>
       <div style={{fontSize: 13, color: T.muted, marginBottom: 16}}>
         Expected citywide risk reduction: <span style={{color: T.green, fontWeight: 700}}>{deployment.expected_citywide_risk_reduction}%</span>
@@ -813,28 +813,46 @@ function PredictiveAnalyticsPanel({ zoneName, selectedMetric = "overall" }) {
 
   const hasAnomalies = forecast.anomaly_detection?.upcoming_anomalies?.length > 0
 
+  const metricColor = activeMetric === 'flood' ? T.blue : activeMetric === 'traffic' ? T.orange : activeMetric === 'emergency' ? T.red : T.blue
+
+  // Compute summary stats from predictions
+  const avgRisk = forecast?.predictions?.length
+    ? (forecast.predictions.reduce((s, p) => s + p.predicted_value, 0) / forecast.predictions.length)
+    : 0
+  const maxRisk = forecast?.predictions?.length
+    ? Math.max(...forecast.predictions.map(p => p.predicted_value))
+    : 0
+  const trendDir = forecast?.predictions?.length >= 2
+    ? (forecast.predictions[forecast.predictions.length - 1].predicted_value - forecast.predictions[0].predicted_value)
+    : 0
+
   return (
-    <div style={{...P, margin: 24}}>
-      <div style={{display: "flex", alignItems: "center", gap: 12, marginBottom: 20}}>
-        <h3 style={{fontSize: 16, fontWeight: 700, color: T.text, margin: 0}}>
-          🚀 AI Predictive Analytics
-        </h3>
-        <div style={{
-          padding: "4px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700,
-          background: T.green + "20", color: T.green
-        }}>
-          PROPHET + ANOMALY AI
+    <div style={{...P, padding: 28}}>
+      <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20}}>
+        <div style={{display: "flex", alignItems: "center", gap: 12}}>
+          <h3 style={{fontSize: 18, fontWeight: 700, color: T.text, margin: 0}}>
+            🚀 AI Predictive Analytics
+          </h3>
+          <div style={{
+            padding: "4px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700,
+            background: T.green + "20", color: T.green
+          }}>
+            PROPHET + ANOMALY AI
+          </div>
+        </div>
+        <div style={{fontSize: 11, color: T.muted}}>
+          {forecast?.model_performance?.method === 'prophet' ? '🧠 Prophet Model' : '📐 Statistical Model'} • {forecast?.model_performance?.training_samples || 0} samples
         </div>
       </div>
 
       {/* Metric Selector */}
-      <div style={{display: "flex", gap: 8, marginBottom: 16}}>
+      <div style={{display: "flex", gap: 8, marginBottom: 20}}>
         {METRICS.map(metric => (
           <button
             key={metric.key}
             onClick={() => setActiveMetric(metric.key)}
             style={{
-              padding: "6px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+              padding: "8px 14px", borderRadius: 6, fontSize: 12, fontWeight: 600,
               background: activeMetric === metric.key ? metric.color + "20" : T.bg,
               color: activeMetric === metric.key ? metric.color : T.muted,
               border: `1px solid ${activeMetric === metric.key ? metric.color : T.border}`,
@@ -844,6 +862,30 @@ function PredictiveAnalyticsPanel({ zoneName, selectedMetric = "overall" }) {
             {metric.icon} {metric.label}
           </button>
         ))}
+      </div>
+
+      {/* Summary Stats Row */}
+      <div style={{display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16, marginBottom: 20}}>
+        <div style={{padding: "12px 16px", background: T.bg, borderRadius: 6, border: `1px solid ${T.border}`}}>
+          <div style={{fontSize: 10, color: T.muted, marginBottom: 4, textTransform: "uppercase", fontWeight: 600}}>Avg Risk (24h)</div>
+          <div style={{fontSize: 20, fontWeight: 700, color: metricColor}}>{(avgRisk * 100).toFixed(1)}%</div>
+        </div>
+        <div style={{padding: "12px 16px", background: T.bg, borderRadius: 6, border: `1px solid ${T.border}`}}>
+          <div style={{fontSize: 10, color: T.muted, marginBottom: 4, textTransform: "uppercase", fontWeight: 600}}>Peak Risk</div>
+          <div style={{fontSize: 20, fontWeight: 700, color: maxRisk > 0.6 ? T.red : maxRisk > 0.4 ? T.orange : T.green}}>{(maxRisk * 100).toFixed(1)}%</div>
+        </div>
+        <div style={{padding: "12px 16px", background: T.bg, borderRadius: 6, border: `1px solid ${T.border}`}}>
+          <div style={{fontSize: 10, color: T.muted, marginBottom: 4, textTransform: "uppercase", fontWeight: 600}}>24h Trend</div>
+          <div style={{fontSize: 20, fontWeight: 700, color: trendDir > 0.02 ? T.red : trendDir < -0.02 ? T.green : T.muted}}>
+            {trendDir > 0.02 ? '↗ Rising' : trendDir < -0.02 ? '↘ Falling' : '→ Stable'}
+          </div>
+        </div>
+        <div style={{padding: "12px 16px", background: T.bg, borderRadius: 6, border: `1px solid ${T.border}`}}>
+          <div style={{fontSize: 10, color: T.muted, marginBottom: 4, textTransform: "uppercase", fontWeight: 600}}>Anomalies</div>
+          <div style={{fontSize: 20, fontWeight: 700, color: hasAnomalies ? T.red : T.green}}>
+            {forecast?.anomaly_detection?.upcoming_anomalies?.length || 0}
+          </div>
+        </div>
       </div>
 
       {/* Anomaly Alerts */}
@@ -875,13 +917,13 @@ function PredictiveAnalyticsPanel({ zoneName, selectedMetric = "overall" }) {
       )}
 
       {/* Forecast Chart */}
-      <div style={{marginBottom: 16}}>
-        <div style={{fontSize: 12, color: T.muted, marginBottom: 8}}>
+      <div style={{marginBottom: 20}}>
+        <div style={{fontSize: 13, color: T.muted, marginBottom: 10, fontWeight: 600}}>
           📊 24-Hour Risk Prediction with Confidence Intervals
         </div>
 
-        <ResponsiveContainer width="100%" height={150}>
-          <LineChart data={forecast.predictions.slice(0, 12)}>
+        <ResponsiveContainer width="100%" height={260}>
+          <LineChart data={forecast.predictions}>
             <CartesianGrid strokeDasharray="3 3" stroke={T.borderL} />
             <XAxis dataKey="timestamp" fontSize={10} stroke={T.muted} />
             <YAxis domain={[0, 1]} tickFormatter={pct} fontSize={10} stroke={T.muted} />
@@ -931,11 +973,14 @@ function PredictiveAnalyticsPanel({ zoneName, selectedMetric = "overall" }) {
       {/* Model Performance */}
       <div style={{
         display: "flex", justifyContent: "space-between", fontSize: 11,
-        color: T.muted, padding: "8px 12px", background: T.bg, borderRadius: 4
+        color: T.muted, padding: "10px 16px", background: T.bg, borderRadius: 6, border: `1px solid ${T.border}`
       }}>
         <span>📈 Training Samples: {forecast.model_performance.training_samples}</span>
         <span>🎯 Avg Uncertainty: ±{pct(forecast.model_performance.forecast_uncertainty)}%</span>
         <span>🔬 Method: {forecast.anomaly_detection.anomaly_method.toUpperCase()}</span>
+        {forecast.model_performance.trend_coefficient !== undefined && (
+          <span>📉 Trend: {forecast.model_performance.trend_coefficient > 0 ? '+' : ''}{(forecast.model_performance.trend_coefficient * 100).toFixed(2)}%/h</span>
+        )}
       </div>
     </div>
   )
@@ -980,7 +1025,7 @@ function InterventionControls({ zoneName, onRiskUpdate }) {
   }, [activeInterventions, zoneName, onRiskUpdate])
 
   return (
-    <div style={{...T.P, margin: 24}}>
+    <div style={{...P, margin: 24}}>
       <h3 style={{fontSize: 16, fontWeight: 700, marginBottom: 20, color: T.text}}>Impact Simulation</h3>
 
       <div style={{display: "flex", flexDirection: "column", gap: 12, marginBottom: 20}}>
@@ -1094,59 +1139,102 @@ function ComputerVisionPanel({ zoneName }) {
     )
   }
 
+  const fileInputId = `cv-file-input-${zoneName.replace(/\s+/g, '-')}`
+
   return (
-    <div style={{...P, margin: 24}}>
-      <div style={{display: "flex", alignItems: "center", gap: 12, marginBottom: 20}}>
-        <h3 style={{fontSize: 16, fontWeight: 700, color: T.text, margin: 0}}>
-          📱 Computer Vision Assessment
-        </h3>
-        <div style={{
-          padding: "4px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700,
-          background: T.orange + "20", color: T.orange
-        }}>
-          YOLO + AI DAMAGE ANALYSIS
+    <div style={{...P, padding: 28}}>
+      <div style={{display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20}}>
+        <div style={{display: "flex", alignItems: "center", gap: 12}}>
+          <h3 style={{fontSize: 18, fontWeight: 700, color: T.text, margin: 0}}>
+            📱 Computer Vision Infrastructure Assessment
+          </h3>
+          <div style={{
+            padding: "4px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700,
+            background: T.orange + "20", color: T.orange
+          }}>
+            YOLO + AI DAMAGE ANALYSIS
+          </div>
         </div>
+        {analysis && (
+          <button
+            onClick={() => setAnalysis(null)}
+            style={{
+              padding: "6px 12px", borderRadius: 6, fontSize: 11, fontWeight: 600,
+              background: T.bg, color: T.muted, border: `1px solid ${T.border}`,
+              cursor: "pointer"
+            }}
+          >
+            ↺ New Analysis
+          </button>
+        )}
       </div>
 
       {!analysis && (
-        <div
-          style={{
-            border: `2px dashed ${dragOver ? T.blue : T.border}`,
-            borderRadius: 8, padding: "32px 24px", textAlign: "center",
-            background: dragOver ? T.blue + "05" : T.bg,
-            cursor: "pointer", transition: "all 0.3s"
-          }}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onClick={() => document.getElementById('file-input').click()}
-        >
-          <input
-            id="file-input"
-            type="file"
-            accept="image/*"
-            onChange={handleFileSelect}
-            style={{display: "none"}}
-          />
+        <div style={{display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20}}>
+          {/* Upload Area */}
+          <div
+            style={{
+              border: `2px dashed ${dragOver ? T.blue : T.border}`,
+              borderRadius: 8, padding: "40px 24px", textAlign: "center",
+              background: dragOver ? T.blue + "05" : T.bg,
+              cursor: "pointer", transition: "all 0.3s",
+              minHeight: 200, display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center"
+            }}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onClick={() => document.getElementById(fileInputId)?.click()}
+          >
+            <input
+              id={fileInputId}
+              type="file"
+              accept="image/*"
+              onChange={handleFileSelect}
+              style={{display: "none"}}
+            />
 
-          <div style={{fontSize: 48, marginBottom: 16}}>📸</div>
-          <div style={{fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 8}}>
-            Upload Infrastructure Image
-          </div>
-          <div style={{fontSize: 12, color: T.muted, lineHeight: 1.4}}>
-            Drag & drop an image or click to select<br/>
-            Supports: JPG, PNG, WEBP • Max 10MB<br/>
-            AI will detect damage automatically
-          </div>
-
-          {dragOver && (
-            <div style={{
-              marginTop: 12, padding: "8px 12px", background: T.blue + "20",
-              borderRadius: 4, fontSize: 11, color: T.blue, fontWeight: 600
-            }}>
-              Drop image to analyze with YOLO AI
+            <div style={{fontSize: 48, marginBottom: 16}}>📸</div>
+            <div style={{fontSize: 14, fontWeight: 600, color: T.text, marginBottom: 8}}>
+              Upload Infrastructure Image
             </div>
-          )}
+            <div style={{fontSize: 12, color: T.muted, lineHeight: 1.6}}>
+              Drag & drop an image or click to select<br/>
+              Supports: JPG, PNG, WEBP • Max 10MB
+            </div>
+
+            {dragOver && (
+              <div style={{
+                marginTop: 12, padding: "8px 12px", background: T.blue + "20",
+                borderRadius: 4, fontSize: 11, color: T.blue, fontWeight: 600
+              }}>
+                Drop image to analyze with YOLO AI
+              </div>
+            )}
+          </div>
+
+          {/* Info Panel */}
+          <div style={{display: "flex", flexDirection: "column", gap: 12}}>
+            <div style={{padding: "16px", background: T.bg, borderRadius: 8, border: `1px solid ${T.border}`}}>
+              <div style={{fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 8}}>🔍 What the AI Detects</div>
+              <div style={{fontSize: 12, color: T.muted, lineHeight: 1.6}}>
+                • Road surface damage (cracks, potholes, erosion)<br/>
+                • Structural defects (walls, bridges, buildings)<br/>
+                • Drainage & water infrastructure issues<br/>
+                • Vegetation overgrowth & encroachment<br/>
+                • Traffic infrastructure wear
+              </div>
+            </div>
+            <div style={{padding: "16px", background: T.blue + "05", borderRadius: 8, border: `1px solid ${T.blue}20`}}>
+              <div style={{fontSize: 13, fontWeight: 700, color: T.blue, marginBottom: 8}}>⚡ Analysis Pipeline</div>
+              <div style={{fontSize: 12, color: T.muted, lineHeight: 1.6}}>
+                1. YOLOv8 object detection identifies infrastructure<br/>
+                2. Damage classifier scores severity per object<br/>
+                3. Cost estimator calculates repair budgets<br/>
+                4. Annotated image highlights all issues
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1192,17 +1280,19 @@ function ComputerVisionPanel({ zoneName }) {
             </div>
           </div>
 
+          {/* Two-column results layout */}
+          <div style={{display: "grid", gridTemplateColumns: analysis.annotated_image ? "1fr 1fr" : "1fr", gap: 20}}>
           {/* Annotated Image */}
           {analysis.annotated_image && (
-            <div style={{marginBottom: 16}}>
-              <div style={{fontSize: 12, color: T.muted, marginBottom: 8}}>
+            <div>
+              <div style={{fontSize: 12, color: T.muted, marginBottom: 8, fontWeight: 600}}>
                 🖼️ AI-Annotated Image with Damage Detection
               </div>
               <img
                 src={analysis.annotated_image}
                 alt="Annotated infrastructure"
                 style={{
-                  width: "100%", maxHeight: 300, objectFit: "contain",
+                  width: "100%", maxHeight: 400, objectFit: "contain",
                   borderRadius: 6, border: `1px solid ${T.border}`
                 }}
               />
@@ -1210,13 +1300,14 @@ function ComputerVisionPanel({ zoneName }) {
           )}
 
           {/* Damage Detections */}
+          <div>
           {analysis.damage_detections?.length > 0 && (
             <div style={{marginBottom: 16}}>
-              <div style={{fontSize: 12, color: T.muted, marginBottom: 8}}>
+              <div style={{fontSize: 12, color: T.muted, marginBottom: 8, fontWeight: 600}}>
                 🔍 Detected Infrastructure Issues ({analysis.damage_detections.length})
               </div>
 
-              {analysis.damage_detections.slice(0, 3).map((detection, i) => (
+              {analysis.damage_detections.slice(0, 5).map((detection, i) => (
                 <div key={i} style={{
                   padding: "8px 12px", marginBottom: 8, borderRadius: 4,
                   background: T.bg, border: `1px solid ${T.border}`,
@@ -1246,14 +1337,14 @@ function ComputerVisionPanel({ zoneName }) {
           {/* Recommendations */}
           {analysis.recommendations?.length > 0 && (
             <div>
-              <div style={{fontSize: 12, color: T.muted, marginBottom: 8}}>
+              <div style={{fontSize: 12, color: T.muted, marginBottom: 8, fontWeight: 600}}>
                 💡 AI Recommendations
               </div>
 
-              {analysis.recommendations.slice(0, 4).map((rec, i) => (
+              {analysis.recommendations.slice(0, 6).map((rec, i) => (
                 <div key={i} style={{
                   fontSize: 11, color: T.text, marginBottom: 4,
-                  padding: "4px 8px", background: T.bg, borderLeft: `3px solid ${T.blue}`,
+                  padding: "6px 10px", background: T.bg, borderLeft: `3px solid ${T.blue}`,
                   borderRadius: 2
                 }}>
                   {rec}
@@ -1261,17 +1352,8 @@ function ComputerVisionPanel({ zoneName }) {
               ))}
             </div>
           )}
-
-          <button
-            onClick={() => setAnalysis(null)}
-            style={{
-              marginTop: 16, padding: "8px 16px", borderRadius: 6,
-              background: T.blue, color: "#fff", border: "none",
-              fontSize: 12, fontWeight: 600, cursor: "pointer"
-            }}
-          >
-            📸 Analyze Another Image
-          </button>
+          </div>
+          </div>
         </div>
       )}
 
@@ -1322,14 +1404,14 @@ function EventTimeline({ zoneName }) {
     if (zoneName) fetchTimeline()
   }, [zoneName, fetchTimeline])
 
-  if (loading) return <div style={{...T.P, padding: 24, textAlign: "center"}}>Loading timeline...</div>
+  if (loading) return <div style={{...P, padding: 24, textAlign: "center"}}>Loading timeline...</div>
 
   if (!timeline || !timeline.predicted_events?.length) {
-    return <div style={{...T.P, padding: 24, textAlign: "center", color: T.muted}}>No timeline events predicted</div>
+    return <div style={{...P, padding: 24, textAlign: "center", color: T.muted}}>No timeline events predicted</div>
   }
 
   return (
-    <div style={{...T.P, margin: 24}}>
+    <div style={{...P, margin: 24}}>
       <div style={{display: "flex", alignItems: "center", gap: 12, marginBottom: 20}}>
         <h3 style={{fontSize: 16, fontWeight: 700, color: T.text}}>Event Timeline</h3>
         <div style={{
@@ -2024,16 +2106,21 @@ export default function App() {
                 </p>
               </div>
 
-              <div style={{ flex: 1, padding: "0 32px 32px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start" }}>
-                <div>
+              <div style={{ flex: 1, padding: "0 32px 32px", display: "flex", flexDirection: "column", gap: 24 }}>
+                {/* Full-width AI Predictive Analytics */}
+                <PredictiveAnalyticsPanel zoneName={zone.name} selectedMetric={mapLayer} />
+
+                {/* Two-column row: Resources + Interventions */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24, alignItems: "start" }}>
                   <ResourceOptimizationPanel zoneName={zone.name} />
-                  <PredictiveAnalyticsPanel zoneName={zone.name} selectedMetric={mapLayer} />
-                  <EventTimeline zoneName={zone.name} />
-                </div>
-                <div>
                   <InterventionControls zoneName={zone.name} onRiskUpdate={handleInterventionUpdate} />
-                  <ComputerVisionPanel zoneName={zone.name} />
                 </div>
+
+                {/* Full-width Computer Vision Assessment */}
+                <ComputerVisionPanel zoneName={zone.name} />
+
+                {/* Full-width Event Timeline */}
+                <EventTimeline zoneName={zone.name} />
               </div>
             </div>
           </div>
