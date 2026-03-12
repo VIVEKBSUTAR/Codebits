@@ -1384,28 +1384,90 @@ function ComputerVisionPanel({ zoneName }) {
 }
 
 // ── Causal Graph Visualization (SVG DAG) ─────────────────────────────────────
-function CausalGraphViz({ edges = [], title = "Causal Graph", height = 320, highlightAI = false }) {
+function CausalGraphViz({ edges = [], title = "Causal Graph", height = 480, highlightAI = false }) {
   if (!edges || edges.length === 0) return null
 
-  // Collect unique nodes
+  // Collect unique nodes and build adjacency
   const nodeSet = new Set()
   edges.forEach(e => { nodeSet.add(e.from); nodeSet.add(e.to) })
   const nodes = Array.from(nodeSet).sort()
 
-  // Layout: arrange nodes in layered layout based on topology
-  // Simple: sources (nodes only in "from") at top, sinks at bottom, rest in middle
-  const fromOnly = new Set(nodes.filter(n => edges.some(e => e.from === n) && !edges.some(e => e.to === n)))
-  const toOnly = new Set(nodes.filter(n => edges.some(e => e.to === n) && !edges.some(e => e.from === n)))
-  const middle = nodes.filter(n => !fromOnly.has(n) && !toOnly.has(n))
-  const layers = [Array.from(fromOnly), middle, Array.from(toOnly)].filter(l => l.length > 0)
+  // Build adjacency maps
+  const outEdges = {}, inEdges = {}
+  nodes.forEach(n => { outEdges[n] = []; inEdges[n] = [] })
+  edges.forEach(e => {
+    if (outEdges[e.from]) outEdges[e.from].push(e.to)
+    if (inEdges[e.to]) inEdges[e.to].push(e.from)
+  })
 
-  const W = 900, H = height
-  const padX = 80, padY = 50
+  // ── Longest-path layering (top-down DAG) ──
+  const layerOf = {}
+  const visited = new Set()
+  function assignLayer(n) {
+    if (visited.has(n)) return layerOf[n] || 0
+    visited.add(n)
+    const parents = inEdges[n] || []
+    if (parents.length === 0) { layerOf[n] = 0; return 0 }
+    let maxP = 0
+    parents.forEach(p => { maxP = Math.max(maxP, assignLayer(p) + 1) })
+    layerOf[n] = maxP
+    return maxP
+  }
+  nodes.forEach(n => assignLayer(n))
+
+  // Group nodes into layers
+  const layerMap = {}
+  nodes.forEach(n => {
+    const l = layerOf[n] || 0
+    if (!layerMap[l]) layerMap[l] = []
+    layerMap[l].push(n)
+  })
+  const layerKeys = Object.keys(layerMap).map(Number).sort((a, b) => a - b)
+  const layers = layerKeys.map(k => layerMap[k])
+
+  // ── Barycenter ordering — minimize edge crossings within each layer ──
+  for (let pass = 0; pass < 4; pass++) {
+    for (let li = 1; li < layers.length; li++) {
+      const prevLayer = layers[li - 1]
+      const prevPos = {}
+      prevLayer.forEach((n, i) => { prevPos[n] = i })
+      layers[li].sort((a, b) => {
+        const parentsA = (inEdges[a] || []).filter(p => prevPos[p] !== undefined)
+        const parentsB = (inEdges[b] || []).filter(p => prevPos[p] !== undefined)
+        const baryA = parentsA.length > 0 ? parentsA.reduce((s, p) => s + prevPos[p], 0) / parentsA.length : 0
+        const baryB = parentsB.length > 0 ? parentsB.reduce((s, p) => s + prevPos[p], 0) / parentsB.length : 0
+        return baryA - baryB
+      })
+    }
+    // Reverse pass (bottom-up)
+    for (let li = layers.length - 2; li >= 0; li--) {
+      const nextLayer = layers[li + 1]
+      const nextPos = {}
+      nextLayer.forEach((n, i) => { nextPos[n] = i })
+      layers[li].sort((a, b) => {
+        const childrenA = (outEdges[a] || []).filter(c => nextPos[c] !== undefined)
+        const childrenB = (outEdges[b] || []).filter(c => nextPos[c] !== undefined)
+        const baryA = childrenA.length > 0 ? childrenA.reduce((s, c) => s + nextPos[c], 0) / childrenA.length : 0
+        const baryB = childrenB.length > 0 ? childrenB.reduce((s, c) => s + nextPos[c], 0) / childrenB.length : 0
+        return baryA - baryB
+      })
+    }
+  }
+
+  // ── Position nodes ──
+  const maxLayerSize = Math.max(...layers.map(l => l.length))
+  const W = Math.max(960, maxLayerSize * 110 + 160)
+  const H = Math.max(height, layers.length * 130 + 80)
+  const padX = 90, padY = 60
   const nodePositions = {}
+  const R = 26 // node radius
+
   layers.forEach((layer, li) => {
     const y = padY + (li / Math.max(layers.length - 1, 1)) * (H - 2 * padY)
+    const layerWidth = W - 2 * padX
+    const spacing = layerWidth / Math.max(layer.length, 1)
     layer.forEach((n, ni) => {
-      const x = padX + ((ni + 0.5) / layer.length) * (W - 2 * padX)
+      const x = padX + spacing * (ni + 0.5)
       nodePositions[n] = { x, y }
     })
   })
@@ -1419,6 +1481,25 @@ function CausalGraphViz({ edges = [], title = "Causal Graph", height = 320, high
     heatwave_index: "#10B981", air_quality_index: "#10B981",
     construction_activity: "#F59E0B", public_event_crowd: "#F59E0B", industrial_discharge: "#F59E0B",
   }
+
+  // ── Build curved edge paths with offset for parallel edges ──
+  const edgePairCount = {}, edgePairIdx = {}
+  edges.forEach(e => {
+    const pair = [e.from, e.to].sort().join("|")
+    edgePairCount[pair] = (edgePairCount[pair] || 0) + 1
+  })
+  edges.forEach(e => {
+    const pair = [e.from, e.to].sort().join("|")
+    edgePairIdx[e.from + "->" + e.to] = (edgePairIdx[e.from + "->" + e.to] || 0)
+    // We just need uniqueness per direction
+  })
+
+  // Count how many edges share the same target for curvature spread
+  const targetEdgeCount = {}
+  edges.forEach(e => {
+    targetEdgeCount[e.to] = (targetEdgeCount[e.to] || 0) + 1
+  })
+  const targetEdgeSeen = {}
 
   return (
     <div style={{ ...P, padding: "16px 20px", marginTop: 12 }}>
@@ -1438,7 +1519,7 @@ function CausalGraphViz({ edges = [], title = "Causal Graph", height = 320, high
             <polygon points="0 0, 8 3, 0 6" fill={T.muted} />
           </marker>
         </defs>
-        {/* Edges */}
+        {/* Edges — curved bezier paths */}
         {edges.map((e, i) => {
           const from = nodePositions[e.from], to = nodePositions[e.to]
           if (!from || !to) return null
@@ -1446,15 +1527,35 @@ function CausalGraphViz({ edges = [], title = "Causal Graph", height = 320, high
           const agreement = e.agreement || (e.sources ? e.sources.length : 1)
           const color = isAI ? "#F97316" : agreement >= 3 ? T.green : agreement >= 2 ? "#3B82F6" : T.muted
           const marker = isAI ? "url(#arrowO)" : agreement >= 3 ? "url(#arrowG)" : agreement >= 2 ? "url(#arrowB)" : "url(#arrowM)"
+
+          // Compute curve offset to avoid overlapping edges
+          const tKey = e.to
+          if (!targetEdgeSeen[tKey]) targetEdgeSeen[tKey] = 0
+          const idx = targetEdgeSeen[tKey]++
+          const total = targetEdgeCount[tKey] || 1
+          const spreadFactor = total > 1 ? (idx - (total - 1) / 2) * 18 : 0
+
           const dx = to.x - from.x, dy = to.y - from.y
           const len = Math.sqrt(dx * dx + dy * dy) || 1
-          const r = 24
+          // Perpendicular direction for curve control point
+          const nx = -dy / len, ny = dx / len
+          // Control point at midpoint + perpendicular offset
+          const mx = (from.x + to.x) / 2 + nx * spreadFactor
+          const my = (from.y + to.y) / 2 + ny * spreadFactor
+
+          // Shorten start/end by node radius
+          const sx = from.x + (dx / len) * (R + 2)
+          const sy = from.y + (dy / len) * (R + 2)
+          const ex = to.x - (dx / len) * (R + 10)
+          const ey = to.y - (dy / len) * (R + 10)
+
           return (
-            <line key={i}
-              x1={from.x + (dx / len) * r} y1={from.y + (dy / len) * r}
-              x2={to.x - (dx / len) * (r + 8)} y2={to.y - (dy / len) * (r + 8)}
+            <path key={i}
+              d={`M ${sx} ${sy} Q ${mx} ${my} ${ex} ${ey}`}
+              fill="none"
               stroke={color} strokeWidth={isAI ? 2.5 : agreement >= 2 ? 2 : 1}
-              strokeDasharray={isAI ? "6 3" : "none"} markerEnd={marker} opacity={agreement >= 2 ? 1 : 0.5}
+              strokeDasharray={isAI ? "6 3" : "none"} markerEnd={marker}
+              opacity={agreement >= 2 ? 0.85 : 0.4}
             />
           )
         })}
@@ -1465,27 +1566,27 @@ function CausalGraphViz({ edges = [], title = "Causal Graph", height = 320, high
           const col = CAT[n] || T.muted
           return (
             <g key={n}>
-              <circle cx={pos.x} cy={pos.y} r={22} fill={col + "18"} stroke={col} strokeWidth={1.5} />
+              <circle cx={pos.x} cy={pos.y} r={R} fill={col + "18"} stroke={col} strokeWidth={2} />
               <text x={pos.x} y={pos.y + 1} textAnchor="middle" dominantBaseline="middle"
-                fill={T.text} fontSize={8} fontWeight={600} fontFamily="IBM Plex Sans, sans-serif">
+                fill={T.text} fontSize={9} fontWeight={600} fontFamily="IBM Plex Sans, sans-serif">
                 {n.replace(/_/g, " ").split(" ").map(w => w.slice(0,4)).join(" ")}
               </text>
             </g>
           )
         })}
         {/* Legend */}
-        <g transform={`translate(${W - 220}, 12)`}>
-          <rect x={0} y={0} width={210} height={highlightAI ? 68 : 52} rx={6} fill={T.panel} stroke={T.border} strokeWidth={0.5} opacity={0.95} />
-          <line x1={8} y1={14} x2={30} y2={14} stroke={T.green} strokeWidth={2} />
-          <text x={36} y={17} fill={T.muted} fontSize={9} fontFamily="IBM Plex Sans">3/3 agreement</text>
-          <line x1={110} y1={14} x2={132} y2={14} stroke="#3B82F6" strokeWidth={2} />
-          <text x={138} y={17} fill={T.muted} fontSize={9} fontFamily="IBM Plex Sans">2/3 agreement</text>
-          <line x1={8} y1={32} x2={30} y2={32} stroke={T.muted} strokeWidth={1} />
-          <text x={36} y={35} fill={T.muted} fontSize={9} fontFamily="IBM Plex Sans">1/3 (weak)</text>
+        <g transform={`translate(${W - 230}, 12)`}>
+          <rect x={0} y={0} width={220} height={highlightAI ? 74 : 56} rx={8} fill={T.panel} stroke={T.border} strokeWidth={0.5} opacity={0.95} />
+          <line x1={10} y1={16} x2={32} y2={16} stroke={T.green} strokeWidth={2} />
+          <text x={38} y={19} fill={T.muted} fontSize={9.5} fontFamily="IBM Plex Sans">3/3 agreement</text>
+          <line x1={120} y1={16} x2={142} y2={16} stroke="#3B82F6" strokeWidth={2} />
+          <text x={148} y={19} fill={T.muted} fontSize={9.5} fontFamily="IBM Plex Sans">2/3 agreement</text>
+          <line x1={10} y1={36} x2={32} y2={36} stroke={T.muted} strokeWidth={1} />
+          <text x={38} y={39} fill={T.muted} fontSize={9.5} fontFamily="IBM Plex Sans">1/3 (weak)</text>
           {highlightAI && (
             <>
-              <line x1={8} y1={52} x2={30} y2={52} stroke="#F97316" strokeWidth={2.5} strokeDasharray="6 3" />
-              <text x={36} y={55} fill="#F97316" fontSize={9} fontWeight={700} fontFamily="IBM Plex Sans">AI Predicted</text>
+              <line x1={10} y1={56} x2={32} y2={56} stroke="#F97316" strokeWidth={2.5} strokeDasharray="6 3" />
+              <text x={38} y={59} fill="#F97316" fontSize={9.5} fontWeight={700} fontFamily="IBM Plex Sans">AI Predicted</text>
             </>
           )}
         </g>
@@ -1900,7 +2001,7 @@ function AIEnginePanel({ zoneName }) {
                       <CausalGraphViz
                         edges={step.graph_so_far}
                         title={`Causal Graph after Step ${step.step} — ${step.algorithm} (${step.graph_so_far.length} edges, ${(step.graph_nodes || []).length} nodes${step.edges_confirmed ? `, ${step.edges_confirmed} confirmed by 2+ algos` : ''})`}
-                        height={280}
+                        height={380}
                       />
                     )}
 
@@ -2053,7 +2154,7 @@ function AIEnginePanel({ zoneName }) {
                   <CausalGraphViz
                     edges={pipelineResult.final_causal_graph || []}
                     title={`Complete Causal Graph — ${(pipelineResult.final_causal_graph || []).length} edges`}
-                    height={380}
+                    height={520}
                     highlightAI={pipelineResult.ai_fallback_activated}
                   />
 
@@ -3251,7 +3352,7 @@ export default function App() {
       <div style={{ height: 64, flexShrink: 0, background: T.panel, borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "stretch", zIndex: 100 }}>
         <div style={{ padding: "0 28px", display: "flex", alignItems: "center", borderRight: `1px solid ${T.border}`, minWidth: 220 }}>
           <Activity color={T.blue} size={20} style={{ marginRight: 8 }} />
-          <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: 1, color: T.text }}>Pune Nexus</span>
+          <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: 1, color: T.text }}>City Management</span>
         </div>
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
