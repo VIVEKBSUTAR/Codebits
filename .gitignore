@@ -6,3 +6,7 @@ __pycache__/
 .vscode/
 .DS_Store
 dist/
+
+*.db
+*.db-shm
+*.db-wal

@@ -18,6 +18,21 @@ async def lifespan(app: FastAPI):
     logger.log("Simulation engine initialized")
     import optimization.resource_optimizer
     logger.log("Optimization module ready")
+
+    # Initialize database
+    from database.db import init_db
+    init_db()
+    logger.log("Database initialized")
+
+    # Start background live data fetch (if API keys configured)
+    import asyncio
+    from ingestion.live_data import periodic_fetch, OPENWEATHER_API_KEY, TOMTOM_API_KEY
+    if OPENWEATHER_API_KEY or TOMTOM_API_KEY:
+        asyncio.create_task(periodic_fetch(interval_minutes=15))
+        logger.log("Live data background fetch started (15min interval)")
+    else:
+        logger.log("No live API keys configured — set OPENWEATHER_API_KEY / TOMTOM_API_KEY")
+
     yield
     # Shutdown (nothing to clean up)
 

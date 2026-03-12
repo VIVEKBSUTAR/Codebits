@@ -1383,6 +1383,1347 @@ function ComputerVisionPanel({ zoneName }) {
   )
 }
 
+// ── Causal Graph Visualization (SVG DAG) ─────────────────────────────────────
+function CausalGraphViz({ edges = [], title = "Causal Graph", height = 320, highlightAI = false }) {
+  if (!edges || edges.length === 0) return null
+
+  // Collect unique nodes
+  const nodeSet = new Set()
+  edges.forEach(e => { nodeSet.add(e.from); nodeSet.add(e.to) })
+  const nodes = Array.from(nodeSet).sort()
+
+  // Layout: arrange nodes in layered layout based on topology
+  // Simple: sources (nodes only in "from") at top, sinks at bottom, rest in middle
+  const fromOnly = new Set(nodes.filter(n => edges.some(e => e.from === n) && !edges.some(e => e.to === n)))
+  const toOnly = new Set(nodes.filter(n => edges.some(e => e.to === n) && !edges.some(e => e.from === n)))
+  const middle = nodes.filter(n => !fromOnly.has(n) && !toOnly.has(n))
+  const layers = [Array.from(fromOnly), middle, Array.from(toOnly)].filter(l => l.length > 0)
+
+  const W = 900, H = height
+  const padX = 80, padY = 50
+  const nodePositions = {}
+  layers.forEach((layer, li) => {
+    const y = padY + (li / Math.max(layers.length - 1, 1)) * (H - 2 * padY)
+    layer.forEach((n, ni) => {
+      const x = padX + ((ni + 0.5) / layer.length) * (W - 2 * padX)
+      nodePositions[n] = { x, y }
+    })
+  })
+
+  // Category colors for nodes
+  const CAT = {
+    rainfall: "#3B82F6", temperature: "#3B82F6", humidity: "#3B82F6", wind_speed: "#3B82F6",
+    drainage_load: "#8B5CF6", power_grid_load: "#8B5CF6", water_supply_pressure: "#8B5CF6",
+    flooding_level: "#EF4444", accident_count: "#EF4444", power_outage: "#EF4444", fire_incident: "#EF4444",
+    traffic_congestion: "#F97316", emergency_delay: "#F97316",
+    heatwave_index: "#10B981", air_quality_index: "#10B981",
+    construction_activity: "#F59E0B", public_event_crowd: "#F59E0B", industrial_discharge: "#F59E0B",
+  }
+
+  return (
+    <div style={{ ...P, padding: "16px 20px", marginTop: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 8 }}>{title}</div>
+      <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} style={{ background: T.bg, borderRadius: 8 }}>
+        <defs>
+          <marker id="arrowG" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill={T.green} />
+          </marker>
+          <marker id="arrowO" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#F97316" />
+          </marker>
+          <marker id="arrowB" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill="#3B82F6" />
+          </marker>
+          <marker id="arrowM" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+            <polygon points="0 0, 8 3, 0 6" fill={T.muted} />
+          </marker>
+        </defs>
+        {/* Edges */}
+        {edges.map((e, i) => {
+          const from = nodePositions[e.from], to = nodePositions[e.to]
+          if (!from || !to) return null
+          const isAI = e.ai_predicted || (e.sources && e.sources.includes("ai_prediction"))
+          const agreement = e.agreement || (e.sources ? e.sources.length : 1)
+          const color = isAI ? "#F97316" : agreement >= 3 ? T.green : agreement >= 2 ? "#3B82F6" : T.muted
+          const marker = isAI ? "url(#arrowO)" : agreement >= 3 ? "url(#arrowG)" : agreement >= 2 ? "url(#arrowB)" : "url(#arrowM)"
+          const dx = to.x - from.x, dy = to.y - from.y
+          const len = Math.sqrt(dx * dx + dy * dy) || 1
+          const r = 24
+          return (
+            <line key={i}
+              x1={from.x + (dx / len) * r} y1={from.y + (dy / len) * r}
+              x2={to.x - (dx / len) * (r + 8)} y2={to.y - (dy / len) * (r + 8)}
+              stroke={color} strokeWidth={isAI ? 2.5 : agreement >= 2 ? 2 : 1}
+              strokeDasharray={isAI ? "6 3" : "none"} markerEnd={marker} opacity={agreement >= 2 ? 1 : 0.5}
+            />
+          )
+        })}
+        {/* Nodes */}
+        {nodes.map(n => {
+          const pos = nodePositions[n]
+          if (!pos) return null
+          const col = CAT[n] || T.muted
+          return (
+            <g key={n}>
+              <circle cx={pos.x} cy={pos.y} r={22} fill={col + "18"} stroke={col} strokeWidth={1.5} />
+              <text x={pos.x} y={pos.y + 1} textAnchor="middle" dominantBaseline="middle"
+                fill={T.text} fontSize={8} fontWeight={600} fontFamily="IBM Plex Sans, sans-serif">
+                {n.replace(/_/g, " ").split(" ").map(w => w.slice(0,4)).join(" ")}
+              </text>
+            </g>
+          )
+        })}
+        {/* Legend */}
+        <g transform={`translate(${W - 220}, 12)`}>
+          <rect x={0} y={0} width={210} height={highlightAI ? 68 : 52} rx={6} fill={T.panel} stroke={T.border} strokeWidth={0.5} opacity={0.95} />
+          <line x1={8} y1={14} x2={30} y2={14} stroke={T.green} strokeWidth={2} />
+          <text x={36} y={17} fill={T.muted} fontSize={9} fontFamily="IBM Plex Sans">3/3 agreement</text>
+          <line x1={110} y1={14} x2={132} y2={14} stroke="#3B82F6" strokeWidth={2} />
+          <text x={138} y={17} fill={T.muted} fontSize={9} fontFamily="IBM Plex Sans">2/3 agreement</text>
+          <line x1={8} y1={32} x2={30} y2={32} stroke={T.muted} strokeWidth={1} />
+          <text x={36} y={35} fill={T.muted} fontSize={9} fontFamily="IBM Plex Sans">1/3 (weak)</text>
+          {highlightAI && (
+            <>
+              <line x1={8} y1={52} x2={30} y2={52} stroke="#F97316" strokeWidth={2.5} strokeDasharray="6 3" />
+              <text x={36} y={55} fill="#F97316" fontSize={9} fontWeight={700} fontFamily="IBM Plex Sans">AI Predicted</text>
+            </>
+          )}
+        </g>
+      </svg>
+    </div>
+  )
+}
+
+// ── Explainability Panel ───────────────────────────────────────────────────────
+function AIEnginePanel({ zoneName }) {
+  const [subTab, setSubTab] = useState("attributes")
+  const [attributes, setAttributes] = useState(null)
+  const [pipelineResult, setPipelineResult] = useState(null)
+  const [pipelineLoading, setPipelineLoading] = useState(false)
+  const [visibleStep, setVisibleStep] = useState(0)
+  const [seedLoading, setSeedLoading] = useState(false)
+  const [unknownResult, setUnknownResult] = useState(null)
+  const [unknownLoading, setUnknownLoading] = useState(false)
+  const [auditEntries, setAuditEntries] = useState([])
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [injectType, setInjectType] = useState("flood")
+  const [injectSev, setInjectSev] = useState("high")
+  const [injectLoading, setInjectLoading] = useState(false)
+
+  useEffect(() => {
+    fetch(`${API_BASE}/attributes`).then(r => r.json()).then(setAttributes).catch(() => {})
+  }, [])
+
+  // Inject an event into the timeseries (so pipeline picks it up)
+  const injectCausalEvent = useCallback(async () => {
+    setInjectLoading(true)
+    try {
+      await fetch(`${API_BASE}/inject-event?zone=${encodeURIComponent(zoneName)}&event_type=${encodeURIComponent(injectType)}&severity=${encodeURIComponent(injectSev)}`, { method: "POST" })
+    } catch (_) {}
+    setInjectLoading(false)
+  }, [zoneName, injectType, injectSev])
+
+  // Seed synthetic demo data
+  const seedData = useCallback(async () => {
+    setSeedLoading(true)
+    try {
+      await fetch(`${API_BASE}/seed-demo-data?zone=${encodeURIComponent(zoneName)}&hours=168`, { method: "POST" })
+    } catch (_) {}
+    setSeedLoading(false)
+  }, [zoneName])
+
+  // Full pipeline — step-by-step demo
+  const runFullPipeline = useCallback(async () => {
+    setPipelineLoading(true)
+    setPipelineResult(null)
+    setVisibleStep(0)
+    try {
+      const res = await fetch(`${API_BASE}/full-pipeline`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ zone: zoneName, max_lag: 3, hours: 168 })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        setPipelineResult(data)
+        // Progressively reveal steps
+        for (let i = 1; i <= (data.steps || []).length; i++) {
+          await new Promise(r => setTimeout(r, 600))
+          setVisibleStep(i)
+        }
+      }
+    } catch (_) {}
+    setPipelineLoading(false)
+  }, [zoneName])
+
+  // Unknown Causes + AI Prediction
+  const discoverUnknown = useCallback(async () => {
+    setUnknownLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/unknown-causes/discover?zone=${encodeURIComponent(zoneName)}`)
+      if (res.ok) setUnknownResult(await res.json())
+    } catch (_) {}
+    setUnknownLoading(false)
+  }, [zoneName])
+
+  // Audit Trail
+  const fetchAudit = useCallback(async () => {
+    setAuditLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/audit/trail?zone=${encodeURIComponent(zoneName)}`)
+      if (res.ok) {
+        const data = await res.json()
+        setAuditEntries(data.entries || [])
+      }
+    } catch (_) {}
+    setAuditLoading(false)
+  }, [zoneName])
+
+  const downloadPDF = useCallback(() => {
+    window.open(`${API_BASE}/audit/pdf?zone=${encodeURIComponent(zoneName)}`, '_blank')
+  }, [zoneName])
+
+  const CATEGORY_COLORS = { weather: T.blue, infrastructure: "#8B5CF6", incident: T.red, traffic: T.orange, environment: T.green, human: "#F59E0B" }
+  const STEP_COLORS = [T.blue, T.green, T.orange, "#8B5CF6", T.red]
+
+  const SUB_TABS = [
+    { id: "attributes", label: "Attribute Space", icon: "📊" },
+    { id: "pipeline", label: "Full Pipeline", icon: "⚡" },
+    { id: "unknown", label: "Unknown Causes", icon: "🔍" },
+    { id: "audit", label: "Audit Trail", icon: "📋" },
+  ]
+
+  return (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      {/* Sub-tab header */}
+      <div style={{ background: T.panel, borderBottom: `1px solid ${T.border}`, display: "flex", padding: "0 32px" }}>
+        {SUB_TABS.map(st => (
+          <button key={st.id} onClick={() => setSubTab(st.id)} style={{
+            padding: "14px 20px", border: "none", cursor: "pointer",
+            background: subTab === st.id ? T.bg : "transparent",
+            borderBottom: subTab === st.id ? `3px solid ${T.blue}` : "3px solid transparent",
+            color: subTab === st.id ? T.text : T.muted, fontSize: 13,
+            fontWeight: subTab === st.id ? 700 : 500, ...FF, display: "flex", alignItems: "center", gap: 6,
+          }}>
+            <span>{st.icon}</span> {st.label}
+          </button>
+        ))}
+        {attributes && (
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, padding: "0 8px" }}>
+            <span style={{ fontSize: 11, color: T.muted }}>{attributes.total} attributes</span>
+            <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: T.green + "20", color: T.green, fontWeight: 700 }}>
+              {Object.keys(attributes.known_causal_priors || {}).length} causal priors
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Sub-tab content */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "32px" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+
+          {/* ── ATTRIBUTE SPACE ─── */}
+          {subTab === "attributes" && attributes && (
+            <>
+              <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Common Attribute Space</h2>
+              <p style={{ fontSize: 14, color: T.muted, marginBottom: 24 }}>
+                All {attributes.total} attributes are fed into Granger, PCMCI, and NOTEARS simultaneously.
+                Attributes with zero variance are automatically excluded during analysis.
+              </p>
+
+              {/* Category grid */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 32 }}>
+                {Object.entries(
+                  attributes.attributes.reduce((acc, a) => {
+                    acc[a.category] = acc[a.category] || []
+                    acc[a.category].push(a)
+                    return acc
+                  }, {})
+                ).map(([category, attrs]) => (
+                  <div key={category} style={{ ...P, padding: 20 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                      <div style={{ width: 10, height: 10, borderRadius: "50%", background: CATEGORY_COLORS[category] || T.muted }} />
+                      <span style={{ fontSize: 14, fontWeight: 700, textTransform: "capitalize", color: T.text }}>{category}</span>
+                      <span style={{ fontSize: 11, color: T.muted, ...FM }}>{attrs.length}</span>
+                    </div>
+                    {attrs.map(a => (
+                      <div key={a.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${T.border}` }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{a.name.replace(/_/g, " ")}</div>
+                          <div style={{ fontSize: 11, color: T.muted }}>{a.desc}</div>
+                        </div>
+                        <span style={{ fontSize: 10, color: T.muted, ...FM, whiteSpace: "nowrap" }}>{a.unit}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+
+              {/* Known causal priors */}
+              <div style={{ ...P, padding: 24 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: T.text }}>Known Causal Priors</div>
+                <p style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>Expected cause→effect relationships. The AI prediction layer uses these to detect anomalies when algorithms disagree.</p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+                  {Object.entries(attributes.known_causal_priors || {}).map(([target, causes]) => (
+                    <div key={target} style={{ padding: 14, background: T.bg, borderRadius: 8, border: `1px solid ${T.border}` }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 6 }}>{target.replace(/_/g, " ")}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                        {causes.map(c => (
+                          <span key={c} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, background: T.blue + "15", color: T.blue, fontWeight: 600 }}>
+                            {c.replace(/_/g, " ")} →
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* ── FULL PIPELINE — Step-by-Step Demo ─── */}
+          {subTab === "pipeline" && (
+            <>
+              <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Causal Graph Generation Pipeline</h2>
+              <p style={{ fontSize: 14, color: T.muted, marginBottom: 8 }}>
+                Step-by-step demonstration of how the causal graph is generated using 3 algorithms.
+                Each algorithm is executed sequentially, its results are explained, and then the final
+                consensus causal graph is evaluated. If root causes remain unresolved, the AI Prediction
+                Layer activates as a fallback.
+              </p>
+              <p style={{ fontSize: 13, color: T.muted, marginBottom: 24, lineHeight: 1.6, padding: "12px 16px", background: T.bg, borderRadius: 8, border: `1px solid ${T.border}` }}>
+                <strong style={{ color: T.text }}>How it works:</strong> Step 1 runs Granger Causality (lag-based F-test).
+                Step 2 runs PCMCI (conditional independence + MCI). Step 3 runs NOTEARS (continuous DAG optimization).
+                Step 4 fuses edges from all 3 into a consensus graph. Step 5 (if needed) uses the AI Prediction Layer to resolve remaining unknowns.
+              </p>
+
+              <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+                <button onClick={seedData} disabled={seedLoading} style={{
+                  padding: "12px 24px", borderRadius: 8, border: `1px solid ${T.border}`, cursor: "pointer",
+                  background: T.bg, color: T.text, fontSize: 13, fontWeight: 600, ...FF,
+                  opacity: seedLoading ? 0.6 : 1,
+                }}>
+                  {seedLoading ? "Seeding..." : "🌱 Seed Demo Data"}
+                </button>
+                <button onClick={runFullPipeline} disabled={pipelineLoading} style={{
+                  padding: "12px 32px", borderRadius: 8, border: "none", cursor: "pointer",
+                  background: "linear-gradient(135deg, " + T.blue + ", #8B5CF6)", color: "#fff",
+                  fontSize: 14, fontWeight: 700, ...FF, opacity: pipelineLoading ? 0.6 : 1,
+                }}>
+                  {pipelineLoading ? "Running Pipeline..." : "⚡ Run Full Pipeline"}
+                </button>
+                {pipelineResult && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: "auto" }}>
+                    <span style={{ fontSize: 12, color: T.muted, ...FM }}>{pipelineResult.data_points} data points</span>
+                    <span style={{ fontSize: 11, padding: "3px 10px", borderRadius: 4, fontWeight: 700,
+                      background: pipelineResult.ai_fallback_activated ? T.orange + "20" : T.green + "20",
+                      color: pipelineResult.ai_fallback_activated ? T.orange : T.green,
+                    }}>
+                      {pipelineResult.ai_fallback_activated ? "AI Fallback Activated" : "All Resolved"}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Inject event into timeseries */}
+              <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 28, padding: "12px 16px", background: T.bg, borderRadius: 8, border: `1px solid ${T.border}` }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: T.text, whiteSpace: "nowrap" }}>💉 Inject Event:</span>
+                <select value={injectType} onChange={e => setInjectType(e.target.value)} style={{
+                  padding: "6px 10px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.panel, color: T.text, fontSize: 12, ...FF,
+                }}>
+                  {["flood","rainfall","traffic_jam","accident","power_outage","fire","heatwave","pollution","construction","crowd","emergency"].map(t => (
+                    <option key={t} value={t}>{t.replace(/_/g, " ")}</option>
+                  ))}
+                </select>
+                <select value={injectSev} onChange={e => setInjectSev(e.target.value)} style={{
+                  padding: "6px 10px", borderRadius: 6, border: `1px solid ${T.border}`, background: T.panel, color: T.text, fontSize: 12, ...FF,
+                }}>
+                  {["low","medium","high","critical"].map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <button onClick={injectCausalEvent} disabled={injectLoading} style={{
+                  padding: "7px 18px", borderRadius: 6, border: "none", cursor: "pointer",
+                  background: T.red, color: "#fff", fontSize: 12, fontWeight: 700, ...FF,
+                  opacity: injectLoading ? 0.6 : 1,
+                }}>
+                  {injectLoading ? "Injecting..." : "Inject"}
+                </button>
+                <span style={{ fontSize: 11, color: T.muted, marginLeft: 4 }}>
+                  Injects event spike into timeseries data. Re-run pipeline to see the changed causal graph.
+                </span>
+              </div>
+
+              {/* Step-by-step walkthrough */}
+              {pipelineResult && (pipelineResult.steps || []).map((step, si) => {
+                if (si + 1 > visibleStep) return null
+                const col = STEP_COLORS[si % STEP_COLORS.length]
+                const isAlgoStep = step.step <= 3
+                const isConsensus = step.step === 4
+                const isAI = step.step === 5
+                return (
+                  <div key={step.step} style={{
+                    marginBottom: 20, borderRadius: 12, overflow: "hidden",
+                    border: `1px solid ${col}30`, background: T.panel,
+                    animation: "fadeIn .4s ease",
+                  }}>
+                    {/* Step header bar */}
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 14, padding: "16px 24px",
+                      background: col + "10", borderBottom: `1px solid ${col}20`,
+                    }}>
+                      <div style={{
+                        width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
+                        background: col, color: "#fff", fontSize: 16, fontWeight: 800, ...FM, flexShrink: 0,
+                      }}>{step.step}</div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 16, fontWeight: 700, color: T.text }}>{step.algorithm}</div>
+                        <div style={{ fontSize: 12, color: T.muted }}>{step.method || ""}</div>
+                      </div>
+                      <span style={{
+                        fontSize: 11, padding: "3px 12px", borderRadius: 6, fontWeight: 700,
+                        background: step.status === "completed" ? T.green + "20" : T.orange + "20",
+                        color: step.status === "completed" ? T.green : T.orange,
+                      }}>
+                        {step.status === "completed" ? "✓ Completed" : step.status}
+                      </span>
+                      {isAlgoStep && (
+                        <span style={{ fontSize: 13, fontWeight: 700, color: col, ...FM }}>
+                          {step.edge_count} edges
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Side-by-side: Explanation | Results */}
+                    <div style={{ display: "grid", gridTemplateColumns: isAlgoStep ? "1fr 1fr" : "1fr", gap: 0 }}>
+                      {/* LEFT — Explanation */}
+                      <div style={{
+                        padding: "20px 24px",
+                        borderRight: isAlgoStep ? `1px solid ${T.border}` : "none",
+                      }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: col, marginBottom: 10 }}>
+                          {isAI ? "🧠 Why AI Fallback?" : isConsensus ? "📊 Evaluation Logic" : "📖 How It Works"}
+                        </div>
+                        <p style={{ fontSize: 13, color: T.muted, lineHeight: 1.7, margin: 0 }}>
+                          {step.explanation}
+                        </p>
+                        {step.parameters && (
+                          <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                            {Object.entries(step.parameters).map(([k, v]) => (
+                              <span key={k} style={{
+                                fontSize: 11, padding: "3px 10px", borderRadius: 4,
+                                background: T.bg, color: T.muted, border: `1px solid ${T.border}`, ...FM,
+                              }}>
+                                {k}: {typeof v === "number" ? v.toFixed ? v.toFixed(4) : v : v}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Consensus: resolved vs unresolved targets */}
+                        {isConsensus && (
+                          <div style={{ marginTop: 16, display: "flex", gap: 12 }}>
+                            <div style={{ padding: "10px 16px", borderRadius: 8, background: T.green + "10", border: `1px solid ${T.green}25`, flex: 1 }}>
+                              <div style={{ fontSize: 22, fontWeight: 700, color: T.green, ...FM }}>{(step.resolved_targets || []).length}</div>
+                              <div style={{ fontSize: 11, color: T.muted }}>Resolved</div>
+                            </div>
+                            <div style={{ padding: "10px 16px", borderRadius: 8, background: T.orange + "10", border: `1px solid ${T.orange}25`, flex: 1 }}>
+                              <div style={{ fontSize: 22, fontWeight: 700, color: T.orange, ...FM }}>{(step.unresolved_targets || []).length}</div>
+                              <div style={{ fontSize: 11, color: T.muted }}>Unresolved</div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* AI: iteration log */}
+                        {isAI && step.iterations && (
+                          <div style={{ marginTop: 16 }}>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 10 }}>AI Resolution Iterations</div>
+                            {step.iterations.map((it, ii) => (
+                              <div key={ii} style={{
+                                padding: "12px 16px", marginBottom: 8, borderRadius: 8,
+                                background: T.bg, border: `1px solid ${T.border}`,
+                              }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                                  <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{it.target.replace(/_/g, " ")}</span>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: it.confidence > 0.5 ? T.green : T.orange, ...FM }}>
+                                    {(it.confidence * 100).toFixed(0)}% confidence
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: 12, color: T.muted }}>
+                                  Predicted root cause: <strong style={{ color: T.text }}>{(it.predicted_root_cause || "unknown").replace(/_/g, " ")}</strong>
+                                </div>
+                                <div style={{ fontSize: 11, color: T.muted, marginTop: 4, ...FM }}>{it.ai_method}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* RIGHT — Edges (for algo steps) */}
+                      {isAlgoStep && (
+                        <div style={{ padding: "20px 24px", maxHeight: 350, overflowY: "auto" }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: col, marginBottom: 10 }}>
+                            Discovered Edges ({step.edge_count})
+                          </div>
+                          {(step.edges || []).length === 0 ? (
+                            <div style={{ fontSize: 13, color: T.muted, padding: 20, textAlign: "center" }}>
+                              No significant edges found at current thresholds.
+                            </div>
+                          ) : (step.edges || []).slice(0, 20).map((e, ei) => (
+                            <div key={ei} style={{
+                              display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
+                              background: ei % 2 === 0 ? T.bg : "transparent", borderRadius: 4,
+                            }}>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: T.text, minWidth: 130 }}>{(e.from || "").replace(/_/g, " ")}</span>
+                              <span style={{ color: col, fontWeight: 700 }}>→</span>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: T.text, minWidth: 130 }}>{(e.to || "").replace(/_/g, " ")}</span>
+                              <span style={{ marginLeft: "auto", display: "flex", gap: 8, fontSize: 11, color: T.muted, ...FM }}>
+                                {e.lag !== undefined && <span>lag={e.lag}</span>}
+                                {e.f_stat !== undefined && <span>F={e.f_stat}</span>}
+                                {e.mci_value !== undefined && <span>MCI={e.mci_value}</span>}
+                                {e.abs_weight !== undefined && <span>w={e.abs_weight}</span>}
+                                {e.p_value !== undefined && <span style={{ color: e.p_value < 0.01 ? T.green : T.orange, fontWeight: 700 }}>p={e.p_value}</span>}
+                              </span>
+                            </div>
+                          ))}
+                          {(step.edges || []).length > 20 && (
+                            <div style={{ fontSize: 11, color: T.muted, textAlign: "center", padding: 8 }}>
+                              and {step.edges.length - 20} more edges...
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Progressive Causal Graph (for algo steps 1-3) */}
+                    {isAlgoStep && step.graph_so_far && step.graph_so_far.length > 0 && (
+                      <CausalGraphViz
+                        edges={step.graph_so_far}
+                        title={`Causal Graph after Step ${step.step} — ${step.algorithm} (${step.graph_so_far.length} edges, ${(step.graph_nodes || []).length} nodes${step.edges_confirmed ? `, ${step.edges_confirmed} confirmed by 2+ algos` : ''})`}
+                        height={280}
+                      />
+                    )}
+
+                    {/* Consensus edges table (Step 4) */}
+                    {isConsensus && (step.consensus_edges || []).length > 0 && (
+                      <div style={{ padding: "0 24px 20px" }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: col, marginBottom: 10 }}>Consensus Causal Graph</div>
+                        {step.consensus_edges.map((e, ei) => (
+                          <div key={ei} style={{
+                            display: "flex", alignItems: "center", gap: 12, padding: "8px 12px",
+                            background: e.agreement >= 2 ? T.green + "08" : "transparent",
+                            borderRadius: 4, marginBottom: 2,
+                          }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{e.from.replace(/_/g, " ")}</span>
+                            <span style={{ color: e.agreement >= 2 ? T.green : T.muted, fontWeight: 700 }}>→</span>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{e.to.replace(/_/g, " ")}</span>
+                            <span style={{ marginLeft: "auto", fontSize: 11, padding: "2px 10px", borderRadius: 4, fontWeight: 700,
+                              background: e.agreement >= 3 ? T.green + "20" : e.agreement >= 2 ? T.blue + "20" : T.muted + "20",
+                              color: e.agreement >= 3 ? T.green : e.agreement >= 2 ? T.blue : T.muted,
+                            }}>
+                              {e.agreement}/3 agree
+                            </span>
+                            <span style={{ fontSize: 10, color: T.muted }}>{(e.algorithms || []).join(", ")}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* AI augmented graph (Step 5) */}
+                    {isAI && (step.augmented_causal_graph || []).length > 0 && (
+                      <div style={{ padding: "0 24px 20px" }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: col, marginBottom: 10 }}>Augmented Causal Graph (consensus + AI predictions)</div>
+                        {step.augmented_causal_graph.map((e, ei) => (
+                          <div key={ei} style={{
+                            display: "flex", alignItems: "center", gap: 12, padding: "8px 12px",
+                            background: e.ai_predicted ? T.orange + "08" : T.green + "08",
+                            borderRadius: 4, marginBottom: 2,
+                          }}>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{e.from.replace(/_/g, " ")}</span>
+                            <span style={{ color: e.ai_predicted ? T.orange : T.green, fontWeight: 700 }}>→</span>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: T.text }}>{e.to.replace(/_/g, " ")}</span>
+                            <span style={{ marginLeft: "auto" }}>
+                              {e.ai_predicted ? (
+                                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: T.orange + "20", color: T.orange, fontWeight: 700 }}>
+                                  AI PREDICTED ({(e.avg_score * 100).toFixed(0)}%)
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 4, background: T.green + "20", color: T.green, fontWeight: 700 }}>
+                                  {e.agreement}/3 consensus
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+
+              {/* ── CONCLUSION — Final Causal Graph ── */}
+              {pipelineResult && visibleStep >= (pipelineResult.steps || []).length && (
+                <div style={{
+                  marginTop: 12, borderRadius: 12, overflow: "hidden",
+                  border: `2px solid ${T.green}40`, background: T.panel,
+                }}>
+                  {/* Conclusion header */}
+                  <div style={{
+                    padding: "20px 24px",
+                    background: "linear-gradient(135deg, " + T.green + "12, " + T.blue + "12)",
+                    borderBottom: `1px solid ${T.green}20`,
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ fontSize: 18, fontWeight: 800, color: T.text }}>
+                          ✅ Conclusion — Final Causal Graph
+                        </div>
+                        <div style={{ fontSize: 13, color: T.muted, marginTop: 4, ...FM }}>
+                          {pipelineResult.total_steps} steps · {pipelineResult.data_points} data points · zone: {pipelineResult.zone}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        <span style={{ fontSize: 22, fontWeight: 800, color: T.green, ...FM }}>
+                          {(pipelineResult.final_causal_graph || []).length}
+                        </span>
+                        <span style={{ fontSize: 12, color: T.muted }}>total edges</span>
+                        <span style={{ fontSize: 11, padding: "4px 14px", borderRadius: 6, fontWeight: 700,
+                          background: pipelineResult.ai_fallback_activated ? T.orange + "20" : T.green + "20",
+                          color: pipelineResult.ai_fallback_activated ? T.orange : T.green,
+                        }}>
+                          {pipelineResult.ai_fallback_activated ? "AI Fallback Used" : "All Algorithms Sufficient"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Summary text */}
+                  {pipelineResult.conclusion && (
+                    <div style={{ padding: "16px 24px", borderBottom: `1px solid ${T.border}` }}>
+                      <p style={{ fontSize: 14, color: T.text, lineHeight: 1.7, margin: 0 }}>
+                        {pipelineResult.conclusion.summary}
+                      </p>
+                      {/* Stats row */}
+                      <div style={{ display: "flex", gap: 16, marginTop: 14, flexWrap: "wrap" }}>
+                        <div style={{ padding: "8px 16px", borderRadius: 8, background: T.green + "10", border: `1px solid ${T.green}20` }}>
+                          <div style={{ fontSize: 20, fontWeight: 700, color: T.green, ...FM }}>{pipelineResult.conclusion.algorithm_edges}</div>
+                          <div style={{ fontSize: 11, color: T.muted }}>Consensus Edges</div>
+                        </div>
+                        {pipelineResult.conclusion.ai_predicted_edges > 0 && (
+                          <div style={{ padding: "8px 16px", borderRadius: 8, background: T.orange + "10", border: `1px solid ${T.orange}20` }}>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: T.orange, ...FM }}>{pipelineResult.conclusion.ai_predicted_edges}</div>
+                            <div style={{ fontSize: 11, color: T.muted }}>AI Predicted</div>
+                          </div>
+                        )}
+                        <div style={{ padding: "8px 16px", borderRadius: 8, background: T.blue + "10", border: `1px solid ${T.blue}20` }}>
+                          <div style={{ fontSize: 20, fontWeight: 700, color: T.blue, ...FM }}>{(pipelineResult.conclusion.resolved_targets || []).length}</div>
+                          <div style={{ fontSize: 11, color: T.muted }}>Targets Resolved</div>
+                        </div>
+                        {(pipelineResult.conclusion.ai_resolved_targets || []).length > 0 && (
+                          <div style={{ padding: "8px 16px", borderRadius: 8, background: "#8B5CF6" + "10", border: `1px solid ${"#8B5CF6"}20` }}>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: "#8B5CF6", ...FM }}>{pipelineResult.conclusion.ai_resolved_targets.length}</div>
+                            <div style={{ fontSize: 11, color: T.muted }}>AI Resolved</div>
+                          </div>
+                        )}
+                        <div style={{ padding: "8px 16px", borderRadius: 8, background: pipelineResult.conclusion.graph_complete ? T.green + "10" : T.red + "10", border: `1px solid ${pipelineResult.conclusion.graph_complete ? T.green : T.red}20` }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: pipelineResult.conclusion.graph_complete ? T.green : T.red }}>
+                            {pipelineResult.conclusion.graph_complete ? "COMPLETE" : "PARTIAL"}
+                          </div>
+                          <div style={{ fontSize: 11, color: T.muted }}>Graph Status</div>
+                        </div>
+                      </div>
+
+                      {/* Key causal chains */}
+                      {(pipelineResult.conclusion.key_causal_chains || []).length > 0 && (
+                        <div style={{ marginTop: 14 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 8 }}>Key Causal Chains Discovered</div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                            {pipelineResult.conclusion.key_causal_chains.map((chain, ci) => (
+                              <span key={ci} style={{ fontSize: 12, padding: "5px 12px", borderRadius: 6, background: T.bg, border: `1px solid ${T.border}`, color: T.text, ...FM }}>
+                                {chain.replace(/_/g, " ")}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Final causal graph visualization */}
+                  <CausalGraphViz
+                    edges={pipelineResult.final_causal_graph || []}
+                    title={`Complete Causal Graph — ${(pipelineResult.final_causal_graph || []).length} edges`}
+                    height={380}
+                    highlightAI={pipelineResult.ai_fallback_activated}
+                  />
+
+                  {/* Final edge list */}
+                  <div style={{ padding: "16px 24px" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 10 }}>All Edges in Final Graph</div>
+                    <div style={{ maxHeight: 200, overflowY: "auto" }}>
+                      {(pipelineResult.final_causal_graph || []).map((e, ei) => (
+                        <div key={ei} style={{
+                          display: "flex", alignItems: "center", gap: 12, padding: "6px 10px",
+                          background: e.ai_predicted ? T.orange + "06" : ei % 2 === 0 ? T.bg : "transparent",
+                          borderRadius: 4,
+                        }}>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{(e.from || "").replace(/_/g, " ")}</span>
+                          <span style={{ color: e.ai_predicted ? T.orange : T.green, fontWeight: 700 }}>→</span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: T.text }}>{(e.to || "").replace(/_/g, " ")}</span>
+                          <span style={{ marginLeft: "auto", fontSize: 10, padding: "2px 8px", borderRadius: 4, fontWeight: 700,
+                            background: e.ai_predicted ? T.orange + "20" : e.agreement >= 3 ? T.green + "20" : T.blue + "20",
+                            color: e.ai_predicted ? T.orange : e.agreement >= 3 ? T.green : T.blue,
+                          }}>
+                            {e.ai_predicted ? `AI (${((e.avg_score || 0) * 100).toFixed(0)}%)` : `${e.agreement}/3`}
+                          </span>
+                          <span style={{ fontSize: 10, color: T.muted }}>{(e.algorithms || []).join(", ")}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── UNKNOWN CAUSES + AI PREDICTION ─── */}
+          {subTab === "unknown" && (
+            <>
+              <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Unknown Cause Discovery + AI Prediction</h2>
+              <p style={{ fontSize: 14, color: T.muted, marginBottom: 24 }}>
+                When causal discovery algorithms fail to identify a root cause for certain events,
+                the AI Prediction Layer activates. It runs anomaly detection (residual analysis,
+                correlation spikes, change points) and then predicts root causes using correlation,
+                mutual information, and anomaly coincidence — shown side-by-side below.
+              </p>
+              <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
+                <button onClick={seedData} disabled={seedLoading} style={{
+                  padding: "10px 20px", borderRadius: 6, border: `1px solid ${T.border}`, cursor: "pointer",
+                  background: T.bg, color: T.text, fontSize: 13, fontWeight: 600, ...FF,
+                  opacity: seedLoading ? 0.6 : 1,
+                }}>
+                  {seedLoading ? "Seeding..." : "🌱 Seed Data"}
+                </button>
+                <button onClick={discoverUnknown} disabled={unknownLoading} style={{
+                  padding: "12px 28px", borderRadius: 8, border: "none", cursor: "pointer",
+                  background: T.orange, color: "#fff", fontSize: 14, fontWeight: 700, ...FF,
+                  opacity: unknownLoading ? 0.6 : 1,
+                }}>
+                  {unknownLoading ? "Analyzing..." : "🔍 Discover Unknown Causes"}
+                </button>
+                {unknownResult && unknownResult.ai_fallback_activated && (
+                  <span style={{ display: "flex", alignItems: "center", fontSize: 12, padding: "0 14px", borderRadius: 6, background: T.orange + "15", color: T.orange, fontWeight: 700, marginLeft: "auto" }}>
+                    🧠 AI Prediction Layer Activated — {(unknownResult.unresolved_targets || []).length} target(s)
+                  </span>
+                )}
+              </div>
+
+              {unknownResult && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                  {/* Side-by-side: Anomaly Discovery | AI Prediction */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+                    {/* LEFT: Anomaly Discovery */}
+                    <div style={{ ...P, padding: 20 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14, color: T.text }}>
+                        🔬 Anomaly Discovery ({unknownResult.total_findings || 0} findings)
+                      </div>
+                      {(unknownResult.discoveries || []).length === 0 ? (
+                        <div style={{ fontSize: 13, color: T.muted, padding: 20, textAlign: "center" }}>
+                          No anomalies detected — all observed patterns explained by known causes.
+                        </div>
+                      ) : unknownResult.discoveries.map((d, i) => (
+                        <div key={i} style={{
+                          padding: "12px 16px", marginBottom: 8, borderRadius: 8,
+                          background: d.confidence > 0.6 ? T.red + "08" : T.orange + "08",
+                          border: `1px solid ${d.confidence > 0.6 ? T.red + "30" : T.orange + "30"}`,
+                        }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                            <span style={{ fontSize: 13, fontWeight: 700, color: T.text }}>{d.event_type}</span>
+                            <span style={{ fontSize: 11, ...FM, color: d.confidence > 0.6 ? T.red : T.orange, fontWeight: 700 }}>
+                              {(d.confidence * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.5 }}>{d.discovered_cause}</div>
+                          <div style={{ fontSize: 10, color: T.muted, marginTop: 4, ...FM }}>via {d.evidence_type}</div>
+                        </div>
+                      ))}
+
+                      {/* Residual analysis */}
+                      {Object.keys(unknownResult.residual_analysis || {}).length > 0 && (
+                        <div style={{ marginTop: 16 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10, color: T.text }}>Residual Analysis</div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                            {Object.entries(unknownResult.residual_analysis).map(([key, val]) => (
+                              <div key={key} style={{ padding: 10, background: T.bg, borderRadius: 6, border: `1px solid ${T.border}` }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: T.label, textTransform: "capitalize" }}>{key.replace(/_/g, " ")}</div>
+                                <div style={{ fontSize: 11, color: val.anomaly ? T.red : T.green, fontWeight: 700, marginTop: 2 }}>
+                                  {val.anomaly ? "ANOMALY" : "Normal"} — {((val.unexplained_ratio || 0) * 100).toFixed(0)}% unexplained
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* RIGHT: AI Prediction Layer */}
+                    <div style={{ ...P, padding: 20 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14, color: T.text }}>
+                        🧠 AI Prediction Layer
+                      </div>
+                      {!(unknownResult.ai_fallback_activated) ? (
+                        <div style={{ fontSize: 13, color: T.muted, padding: 20, textAlign: "center" }}>
+                          AI prediction not needed — all targets resolved by causal discovery algorithms.
+                        </div>
+                      ) : (
+                        <>
+                          <div style={{ fontSize: 12, color: T.muted, marginBottom: 12, padding: "10px 14px", background: T.bg, borderRadius: 6 }}>
+                            <strong style={{ color: T.text }}>Unresolved targets:</strong>{" "}
+                            {(unknownResult.unresolved_targets || []).map(t => t.replace(/_/g, " ")).join(", ")}
+                          </div>
+                          {(unknownResult.ai_iterations || []).map((it, ii) => (
+                            <div key={ii} style={{
+                              padding: "14px 16px", marginBottom: 10, borderRadius: 8,
+                              background: it.status === "ai_resolved" ? T.green + "06" : T.orange + "06",
+                              border: `1px solid ${it.status === "ai_resolved" ? T.green + "25" : T.orange + "25"}`,
+                            }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+                                <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>
+                                  {it.target.replace(/_/g, " ")}
+                                </span>
+                                <span style={{
+                                  fontSize: 11, padding: "2px 10px", borderRadius: 4, fontWeight: 700,
+                                  background: it.status === "ai_resolved" ? T.green + "20" : T.orange + "20",
+                                  color: it.status === "ai_resolved" ? T.green : T.orange,
+                                }}>
+                                  {it.status === "ai_resolved" ? "AI Resolved" : "Unresolved"}
+                                </span>
+                              </div>
+                              <div style={{ fontSize: 13, color: T.muted, marginBottom: 8 }}>
+                                Predicted root cause: <strong style={{ color: T.text }}>
+                                  {(it.predicted_root_cause || "unknown").replace(/_/g, " ")}
+                                </strong>
+                                <span style={{ marginLeft: 8, fontSize: 11, color: it.confidence > 0.5 ? T.green : T.orange, fontWeight: 700, ...FM }}>
+                                  ({(it.confidence * 100).toFixed(0)}% confidence)
+                                </span>
+                              </div>
+                              {/* Top candidates bar chart */}
+                              {(it.candidates || []).slice(0, 5).map((c, ci) => (
+                                <div key={ci} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0" }}>
+                                  <span style={{ fontSize: 11, fontWeight: 600, color: T.text, minWidth: 120 }}>{c.variable.replace(/_/g, " ")}</span>
+                                  <div style={{ flex: 1, height: 5, background: T.bg, borderRadius: 3, overflow: "hidden" }}>
+                                    <div style={{ width: `${Math.min(c.total_score * 100, 100)}%`, height: "100%", borderRadius: 3,
+                                      background: c.is_known_cause ? T.blue : T.orange }} />
+                                  </div>
+                                  <span style={{ fontSize: 10, ...FM, color: T.muted }}>{(c.total_score * 100).toFixed(0)}</span>
+                                  {c.is_known_cause && <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, background: T.blue + "20", color: T.blue, fontWeight: 700 }}>PRIOR</span>}
+                                </div>
+                              ))}
+                              <div style={{ fontSize: 10, color: T.muted, marginTop: 6, ...FM }}>
+                                {it.method_details?.correlation_candidates || 0} corr · {it.method_details?.mi_candidates || 0} MI · {it.method_details?.anomaly_candidates || 0} anomaly
+                              </div>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Correlation spikes */}
+                  {(unknownResult.correlation_spikes || []).length > 0 && (
+                    <div style={{ ...P, padding: 20 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Correlation Spikes</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {unknownResult.correlation_spikes.map((s, i) => (
+                          <div key={i} style={{ padding: "8px 14px", borderRadius: 6, background: T.bg, border: `1px solid ${T.border}`, fontSize: 12 }}>
+                            <span style={{ fontWeight: 700, color: T.text }}>{s.variable_pair || `${s.var1} / ${s.var2}`}</span>
+                            <span style={{ color: T.muted, marginLeft: 8, ...FM }}>r={s.correlation?.toFixed(3) || s.current_corr?.toFixed(3) || s.value?.toFixed(3)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── CONCLUSION — Summary ── */}
+                  {unknownResult.conclusion && (
+                    <div style={{
+                      borderRadius: 12, overflow: "hidden",
+                      border: `2px solid ${unknownResult.conclusion.all_resolved ? T.green + "40" : T.orange + "40"}`,
+                      background: T.panel,
+                    }}>
+                      <div style={{
+                        padding: "18px 24px",
+                        background: unknownResult.conclusion.all_resolved
+                          ? `linear-gradient(135deg, ${T.green}12, ${T.blue}12)`
+                          : `linear-gradient(135deg, ${T.orange}12, ${T.red}12)`,
+                        borderBottom: `1px solid ${T.border}`,
+                      }}>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: T.text }}>
+                          📋 Conclusion — Unknown Variable Summary
+                        </div>
+                      </div>
+
+                      <div style={{ padding: "16px 24px" }}>
+                        <p style={{ fontSize: 14, color: T.text, lineHeight: 1.8, margin: "0 0 16px" }}>
+                          {unknownResult.conclusion.summary}
+                        </p>
+
+                        {/* Stats */}
+                        <div style={{ display: "flex", gap: 14, marginBottom: 18, flexWrap: "wrap" }}>
+                          <div style={{ padding: "8px 16px", borderRadius: 8, background: T.red + "10", border: `1px solid ${T.red}20` }}>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: T.red, ...FM }}>{unknownResult.conclusion.total_anomalies}</div>
+                            <div style={{ fontSize: 11, color: T.muted }}>Anomalies Found</div>
+                          </div>
+                          <div style={{ padding: "8px 16px", borderRadius: 8, background: T.orange + "10", border: `1px solid ${T.orange}20` }}>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: T.orange, ...FM }}>{(unknownResult.conclusion.unknown_variables || []).length}</div>
+                            <div style={{ fontSize: 11, color: T.muted }}>Unknown Variables</div>
+                          </div>
+                          <div style={{ padding: "8px 16px", borderRadius: 8, background: "#8B5CF6" + "10", border: `1px solid ${"#8B5CF6"}20` }}>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: "#8B5CF6", ...FM }}>{(unknownResult.conclusion.ai_graph_placements || []).length}</div>
+                            <div style={{ fontSize: 11, color: T.muted }}>AI Placed in Graph</div>
+                          </div>
+                          <div style={{ padding: "8px 16px", borderRadius: 8, background: T.blue + "10", border: `1px solid ${T.blue}20` }}>
+                            <div style={{ fontSize: 20, fontWeight: 700, color: T.blue, ...FM }}>{unknownResult.conclusion.change_points_detected}</div>
+                            <div style={{ fontSize: 11, color: T.muted }}>Change Points</div>
+                          </div>
+                          <div style={{ padding: "8px 16px", borderRadius: 8, background: unknownResult.conclusion.all_resolved ? T.green + "10" : T.red + "10", border: `1px solid ${unknownResult.conclusion.all_resolved ? T.green : T.red}20` }}>
+                            <div style={{ fontSize: 14, fontWeight: 700, color: unknownResult.conclusion.all_resolved ? T.green : T.red }}>
+                              {unknownResult.conclusion.all_resolved ? "ALL RESOLVED" : "NEEDS ATTENTION"}
+                            </div>
+                            <div style={{ fontSize: 11, color: T.muted }}>Status</div>
+                          </div>
+                        </div>
+
+                        {/* Unknown variables detail */}
+                        {(unknownResult.conclusion.unknown_variables || []).length > 0 && (
+                          <div style={{ marginBottom: 16 }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 10 }}>Unknown Variables (Unexplained by Known Causes)</div>
+                            {unknownResult.conclusion.unknown_variables.map((u, ui) => (
+                              <div key={ui} style={{
+                                display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+                                background: T.bg, borderRadius: 6, marginBottom: 6, border: `1px solid ${T.border}`,
+                              }}>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: T.red }}>{(u.variable || "").replace(/_/g, " ")}</span>
+                                <div style={{ flex: 1, height: 6, background: T.border, borderRadius: 3, overflow: "hidden" }}>
+                                  <div style={{ width: `${(u.unexplained_ratio || 0) * 100}%`, height: "100%", borderRadius: 3, background: T.red }} />
+                                </div>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: T.red, ...FM }}>{((u.unexplained_ratio || 0) * 100).toFixed(0)}% unexplained</span>
+                                {u.drift > 0.3 && <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 3, background: T.orange + "20", color: T.orange, fontWeight: 700 }}>DRIFT</span>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* AI placement in graph */}
+                        {(unknownResult.conclusion.ai_graph_placements || []).length > 0 && (
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 10 }}>AI-Predicted Graph Positions</div>
+                            <div style={{ fontSize: 12, color: T.muted, marginBottom: 10 }}>Where each unknown variable fits in the causal graph:</div>
+                            {unknownResult.conclusion.ai_graph_placements.map((p, pi) => (
+                              <div key={pi} style={{
+                                display: "flex", alignItems: "center", gap: 12, padding: "12px 16px",
+                                background: "#8B5CF6" + "06", borderRadius: 8, marginBottom: 6,
+                                border: `1px solid ${"#8B5CF6"}20`,
+                              }}>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>
+                                    {(p.unknown_target || "").replace(/_/g, " ")}
+                                  </div>
+                                  <div style={{ fontSize: 12, color: T.muted, marginTop: 4 }}>
+                                    Predicted cause: <strong style={{ color: "#8B5CF6" }}>{(p.predicted_cause || "").replace(/_/g, " ")}</strong>
+                                  </div>
+                                </div>
+                                <div style={{ fontSize: 16, fontWeight: 800, color: "#8B5CF6", ...FM, whiteSpace: "nowrap" }}>
+                                  {(p.graph_position || "").replace(/_/g, " ")}
+                                </div>
+                                <span style={{
+                                  fontSize: 11, padding: "3px 10px", borderRadius: 4, fontWeight: 700,
+                                  background: p.confidence > 0.6 ? T.green + "20" : T.orange + "20",
+                                  color: p.confidence > 0.6 ? T.green : T.orange,
+                                }}>
+                                  {((p.confidence || 0) * 100).toFixed(0)}%
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── AUDIT TRAIL ─── */}
+          {subTab === "audit" && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+                <div>
+                  <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Audit Trail</h2>
+                  <p style={{ fontSize: 14, color: T.muted }}>Full lifecycle tracking: Detection → Action → Resolution → Outcome</p>
+                </div>
+                <div style={{ display: "flex", gap: 12 }}>
+                  <button onClick={fetchAudit} disabled={auditLoading} style={{
+                    padding: "10px 20px", borderRadius: 6, border: `1px solid ${T.border}`, cursor: "pointer",
+                    background: T.bg, color: T.text, fontSize: 13, fontWeight: 600, ...FF,
+                  }}>
+                    {auditLoading ? "Loading..." : "🔄 Refresh"}
+                  </button>
+                  <button onClick={downloadPDF} style={{
+                    padding: "10px 20px", borderRadius: 6, border: "none", cursor: "pointer",
+                    background: T.red, color: "#fff", fontSize: 13, fontWeight: 700, ...FF,
+                  }}>
+                    📄 Download PDF
+                  </button>
+                </div>
+              </div>
+
+              {auditEntries.length === 0 ? (
+                <div style={{ ...P, padding: 40, textAlign: "center", color: T.muted }}>
+                  <div style={{ fontSize: 40, marginBottom: 12 }}>📋</div>
+                  <div style={{ fontSize: 14 }}>No audit entries yet. Events will be logged automatically as the system operates.</div>
+                  <button onClick={fetchAudit} style={{
+                    marginTop: 16, padding: "10px 20px", borderRadius: 6, border: "none", cursor: "pointer",
+                    background: T.blue, color: "#fff", fontSize: 13, fontWeight: 600, ...FF,
+                  }}>Load Audit Trail</button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {auditEntries.map((entry, i) => (
+                    <div key={entry.id || i} style={{ ...P, padding: 20 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ width: 10, height: 10, borderRadius: "50%", background: entry.resolved ? T.green : entry.severity === "high" ? T.red : T.orange }} />
+                          <span style={{ fontSize: 14, fontWeight: 700, textTransform: "capitalize" }}>{(entry.event_type || "").replace(/_/g, " ")}</span>
+                          <span style={{ fontSize: 12, color: T.muted }}>in {entry.zone}</span>
+                        </div>
+                        <span style={{
+                          fontSize: 11, padding: "3px 8px", borderRadius: 4, fontWeight: 700,
+                          background: entry.resolved ? T.green + "20" : T.orange + "20",
+                          color: entry.resolved ? T.green : T.orange,
+                        }}>
+                          {entry.resolved ? "RESOLVED" : "OPEN"}
+                        </span>
+                      </div>
+                      {entry.event_description && <div style={{ fontSize: 13, color: T.muted, marginBottom: 8 }}>{entry.event_description}</div>}
+                      <div style={{ display: "flex", gap: 20, fontSize: 12, color: T.muted, ...FM }}>
+                        <span>Detected: {entry.event_timestamp}</span>
+                        {entry.action_taken && <span>Action: {entry.action_taken}</span>}
+                        {entry.resolution_timestamp && <span>Resolved: {entry.resolution_timestamp}</span>}
+                      </div>
+                      {entry.notes && (
+                        <div style={{ marginTop: 8, fontSize: 12, color: T.label, padding: "8px 12px", background: T.bg, borderRadius: 6, whiteSpace: "pre-wrap" }}>{entry.notes}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Event Cascade Timeline Prediction ──────────────────────────────────────────
+function EventCascadeTimeline({ zoneName }) {
+  const [cascade, setCascade] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [impactModal, setImpactModal] = useState(null) // { intervention, targetEvent }
+  const [impactResult, setImpactResult] = useState(null)
+  const [impactLoading, setImpactLoading] = useState(false)
+
+  const fetchCascade = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/event-cascade-timeline?zone=${encodeURIComponent(zoneName)}`)
+      if (res.ok) setCascade(await res.json())
+    } catch (_) {}
+    setLoading(false)
+  }, [zoneName])
+
+  useEffect(() => {
+    if (zoneName) fetchCascade()
+  }, [zoneName, fetchCascade])
+
+  const analyzeImpact = useCallback(async (intervention) => {
+    setImpactLoading(true)
+    setImpactResult(null)
+    try {
+      const res = await fetch(`${API_BASE}/projected-impact`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          zone: zoneName,
+          target_event: intervention.target_event,
+          intervention_id: intervention.id
+        })
+      })
+      if (res.ok) setImpactResult(await res.json())
+    } catch (_) {}
+    setImpactLoading(false)
+  }, [zoneName])
+
+  const executeIntervention = useCallback(async () => {
+    if (!impactModal) return
+    try {
+      await fetch(`${API_BASE}/simulate-intervention`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ zone: zoneName, intervention: impactModal.id })
+      })
+    } catch (_) {}
+    setImpactModal(null)
+    setImpactResult(null)
+    fetchCascade()
+  }, [impactModal, zoneName, fetchCascade])
+
+  if (loading) return (
+    <div style={{...P, padding: 24, textAlign: "center"}}>
+      <div style={{fontSize: 14, color: T.muted}}>⏳ Computing cascade predictions...</div>
+    </div>
+  )
+
+  if (!cascade) return (
+    <div style={{...P, padding: 24, textAlign: "center", color: T.muted}}>
+      No cascade data available. Inject an event to see predictions.
+    </div>
+  )
+
+  // Group interventions by target_event
+  const interventionsByEvent = {}
+  for (const iv of cascade.available_interventions || []) {
+    if (!interventionsByEvent[iv.target_event]) interventionsByEvent[iv.target_event] = []
+    interventionsByEvent[iv.target_event].push(iv)
+  }
+
+  // Reverse mapping: display name → internal node name
+  const displayToNode = {
+    "RAINFALL HIGH": "Rainfall",
+    "DRAINAGE OVERLOAD": "DrainageCapacity",
+    "ROAD FLOODING": "Flooding",
+    "TRAFFIC CONGESTION": "TrafficCongestion",
+    "EMERGENCY DELAY": "EmergencyDelay"
+  }
+
+  return (
+    <div style={{...P, padding: 28}}>
+      {/* Header */}
+      <div style={{display: "flex", alignItems: "center", gap: 12, marginBottom: 24}}>
+        <span style={{fontSize: 20}}>⏱</span>
+        <h3 style={{fontSize: 18, fontWeight: 700, color: T.text, margin: 0}}>Event Timeline Prediction</h3>
+        <div style={{
+          marginLeft: "auto", padding: "4px 10px", borderRadius: 4, fontSize: 11, fontWeight: 700,
+          background: cascade.escalation_risk_score === "HIGH" ? T.red + "20" :
+                     cascade.escalation_risk_score === "MEDIUM" ? T.orange + "20" : T.green + "20",
+          color: cascade.escalation_risk_score === "HIGH" ? T.red :
+                cascade.escalation_risk_score === "MEDIUM" ? T.orange : T.green
+        }}>
+          {cascade.escalation_risk_score} RISK
+        </div>
+      </div>
+
+      {/* Table Header */}
+      <div style={{
+        display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr",
+        padding: "10px 16px", borderBottom: `2px solid ${T.border}`, marginBottom: 4,
+        fontSize: 11, fontWeight: 700, color: T.muted, textTransform: "uppercase", letterSpacing: 1
+      }}>
+        <span>Event Incident</span>
+        <span style={{textAlign: "center"}}>Current Status</span>
+        <span style={{textAlign: "center"}}>Escalation Time</span>
+      </div>
+
+      {/* Event Rows */}
+      {cascade.cascade_events.map((ev, i) => (
+        <div key={i} style={{
+          display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr",
+          padding: "14px 16px", alignItems: "center",
+          borderBottom: `1px solid ${T.border}`,
+          background: ev.status === "happened" ? T.bg : "transparent"
+        }}>
+          <span style={{fontSize: 14, fontWeight: 700, color: T.text}}>{ev.event_name}</span>
+          <div style={{textAlign: "center"}}>
+            <span style={{
+              padding: "4px 10px", borderRadius: 4, fontSize: 11, fontWeight: 700,
+              background: ev.status === "happened" ? T.green + "20" : T.orange + "20",
+              color: ev.status === "happened" ? T.green : T.orange
+            }}>
+              {ev.status === "happened" ? "Happened" : "Predicted"}
+            </span>
+          </div>
+          <span style={{
+            textAlign: "center", fontSize: 13, fontWeight: 600, ...FM,
+            color: ev.delay_minutes === 0 ? T.text : T.red
+          }}>
+            {ev.escalation_time}
+          </span>
+        </div>
+      ))}
+
+      {/* Interventions Section */}
+      {cascade.cascade_events.filter(ev => ev.status === "predicted" && ev.probability >= 0.2).map((ev) => {
+        const nodeKey = displayToNode[ev.event_name]
+        const interventions = interventionsByEvent[ev.event_name] || interventionsByEvent[nodeKey] || []
+        if (interventions.length === 0) return null
+
+        return (
+          <div key={ev.event_name} style={{marginTop: 20, padding: "16px 20px", background: T.green + "05", borderRadius: 8, border: `1px solid ${T.green}30`}}>
+            <div style={{display: "flex", alignItems: "center", gap: 8, marginBottom: 12}}>
+              <span style={{fontSize: 16}}>⚙️</span>
+              <span style={{fontSize: 14, fontWeight: 700, color: T.green}}>
+                Interventions for {ev.event_name}
+              </span>
+            </div>
+            <div style={{display: "flex", flexDirection: "column", gap: 8}}>
+              {interventions.map(iv => (
+                <div key={iv.id} style={{
+                  display: "flex", alignItems: "center", justifyContent: "space-between",
+                  padding: "12px 16px", background: T.panel, borderRadius: 6, border: `1px solid ${T.border}`
+                }}>
+                  <span style={{fontSize: 13, fontWeight: 600, color: T.text}}>{iv.label}</span>
+                  <button
+                    onClick={() => { setImpactModal(iv); analyzeImpact(iv) }}
+                    style={{
+                      padding: "8px 16px", borderRadius: 6, border: "none", cursor: "pointer",
+                      background: T.green, color: "#fff", fontSize: 12, fontWeight: 700,
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    Analyze Impact →
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })}
+
+      {/* ── Projected Impact Modal ───────────────────────────────────────── */}
+      {impactModal && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
+          background: "rgba(0,0,0,0.4)", zIndex: 9999,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          backdropFilter: "blur(4px)"
+        }} onClick={() => { setImpactModal(null); setImpactResult(null) }}>
+          <div style={{
+            background: T.panel, borderRadius: 16, padding: "32px", width: 440,
+            boxShadow: "0 20px 60px rgba(0,0,0,0.2)", border: `1px solid ${T.border}`
+          }} onClick={e => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div style={{display: "flex", alignItems: "center", gap: 10, marginBottom: 24}}>
+              <span style={{fontSize: 20}}>📊</span>
+              <h3 style={{fontSize: 18, fontWeight: 700, color: T.text, margin: 0}}>Projected Impact Analysis</h3>
+            </div>
+
+            {impactLoading && (
+              <div style={{textAlign: "center", padding: "32px 0", color: T.muted, fontSize: 14}}>
+                Computing causal impact...
+              </div>
+            )}
+
+            {impactResult && (
+              <>
+                {/* Info Rows */}
+                <div style={{display: "flex", flexDirection: "column", gap: 12, marginBottom: 24}}>
+                  <div style={{display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${T.border}`}}>
+                    <span style={{fontSize: 13, fontWeight: 600, color: T.muted}}>Target Event:</span>
+                    <span style={{fontSize: 13, fontWeight: 700, color: T.text}}>{impactResult.target_event}</span>
+                  </div>
+                  <div style={{display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${T.border}`}}>
+                    <span style={{fontSize: 13, fontWeight: 600, color: T.muted}}>Proposed Action:</span>
+                    <span style={{fontSize: 13, color: T.text}}>{impactResult.proposed_action}</span>
+                  </div>
+                  <div style={{display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${T.border}`}}>
+                    <span style={{fontSize: 13, fontWeight: 600, color: T.muted}}>Resources Consumed:</span>
+                    <span style={{fontSize: 13, color: T.text}}>
+                      {impactResult.resources_consumed} {impactResult.resources_unit}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Risk Reduction Card */}
+                <div style={{
+                  padding: "20px", borderRadius: 12, marginBottom: 24,
+                  background: T.green + "10", border: `1px solid ${T.green}30`,
+                  display: "flex", alignItems: "center", gap: 16
+                }}>
+                  <div style={{
+                    width: 48, height: 48, borderRadius: "50%",
+                    background: T.green + "20", display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 20
+                  }}>📉</div>
+                  <div>
+                    <div style={{fontSize: 20, fontWeight: 700, color: T.green, marginBottom: 4}}>
+                      Risk Reduction
+                    </div>
+                    <div style={{fontSize: 12, color: T.muted, lineHeight: 1.5}}>
+                      {impactResult.description}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Before/After Risk Comparison */}
+                <div style={{marginBottom: 24}}>
+                  <div style={{fontSize: 12, fontWeight: 700, color: T.muted, marginBottom: 8, textTransform: "uppercase", letterSpacing: 1}}>
+                    Risk Comparison
+                  </div>
+                  {["flooding", "traffic", "emergency_delay"].map(key => {
+                    const before = impactResult.baseline_risks[key] || 0
+                    const after = impactResult.after_intervention_risks[key] || 0
+                    const label = key.replace("_", " ").replace(/\b\w/g, c => c.toUpperCase())
+                    return (
+                      <div key={key} style={{display: "flex", alignItems: "center", gap: 12, marginBottom: 8}}>
+                        <span style={{fontSize: 12, color: T.label, width: 120}}>{label}</span>
+                        <div style={{flex: 1, height: 6, background: T.bg, borderRadius: 3, position: "relative"}}>
+                          <div style={{height: "100%", width: `${before * 100}%`, background: T.red + "40", borderRadius: 3, position: "absolute"}} />
+                          <div style={{height: "100%", width: `${after * 100}%`, background: T.green, borderRadius: 3, position: "absolute"}} />
+                        </div>
+                        <span style={{fontSize: 11, color: T.muted, width: 80, textAlign: "right", ...FM}}>
+                          {before > after ? "Reduced" : before === after ? "No change" : "Increased"}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Action Buttons */}
+                <div style={{display: "flex", gap: 12}}>
+                  <button
+                    onClick={() => { setImpactModal(null); setImpactResult(null) }}
+                    style={{
+                      flex: 1, padding: "12px", borderRadius: 8,
+                      background: T.bg, color: T.text, border: `1px solid ${T.border}`,
+                      fontSize: 14, fontWeight: 600, cursor: "pointer"
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={executeIntervention}
+                    style={{
+                      flex: 1.5, padding: "12px", borderRadius: 8,
+                      background: T.blue, color: "#fff", border: "none",
+                      fontSize: 14, fontWeight: 700, cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8
+                    }}
+                  >
+                    🛡️ Execute Intervention
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Event Timeline ─────────────────────────────────────────────────────────────
 function EventTimeline({ zoneName }) {
   const [timeline, setTimeline] = useState(null)
@@ -1901,7 +3242,7 @@ export default function App() {
     fetchZoneRisk(zoneName, sel)
   }, [sel, newEv, zones, fetchZoneRisk])
 
-  const TABS = ["Overview", "Analysis", "Resources", "Reports"]
+  const TABS = ["Overview", "Analysis", "Resources", "Explainability", "Reports"]
 
   return (
     <div style={{ ...FF, background: T.bg, height: "100vh", color: T.text, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -2089,6 +3430,9 @@ export default function App() {
                   )}
                 </div>
 
+                {/* Event Cascade Timeline Prediction */}
+                <EventCascadeTimeline zoneName={zone.name} />
+
               </div>
             </div>
           </>
@@ -2126,7 +3470,12 @@ export default function App() {
           </div>
         )}
 
-        {/* 4. REPORTS TAB */}
+        {/* 4. EXPLAINABILITY TAB */}
+        {tab === "Explainability" && (
+          <AIEnginePanel zoneName={zone.name} />
+        )}
+
+        {/* 5. REPORTS TAB */}
         {tab === "Reports" && (
           <div style={{ flex: 1, overflowY: "auto", padding: "40px" }}>
             <div style={{ maxWidth: 1000, margin: "0 auto" }}>

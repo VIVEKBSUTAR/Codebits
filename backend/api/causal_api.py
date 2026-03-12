@@ -6,9 +6,11 @@ from models.prediction_model import (
     IncidentHistoryResponse, AdvancedInferenceRequest, AdvancedInferenceResponse,
     MultiObjectiveRequest, MultiObjectiveResponse, CausalityAnalysisResponse,
     AdvancedPredictionItem, UncertaintyBounds, ParetoSolution, CausalEffect,
-    CounterfactualExplanation
+    CounterfactualExplanation,
+    EventCascadeTimelineResponse, CascadeEventItem, InterventionOption,
+    ProjectedImpactRequest, ProjectedImpactResponse
 )
-from simulation.cascade_engine import generate_timeline
+from simulation.cascade_engine import generate_timeline, EDGE_DELAYS, EVENT_NAMES
 from simulation.intervention_engine import simulate_intervention
 from optimization.resource_optimizer import generate_optimal_deployment
 from analysis.cause_analyzer import compute_causal_contributions
@@ -148,6 +150,253 @@ async def api_analyze_infrastructure_image(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Image analysis error: {str(e)}")
+
+
+# ── Event Cascade Timeline ──────────────────────────────────────────────────────
+
+# Cascade chain: the DAG path for display purposes
+CASCADE_CHAIN = [
+    "Rainfall",
+    "DrainageCapacity",
+    "Flooding",
+    "TrafficCongestion",
+    "EmergencyDelay",
+]
+
+CASCADE_DISPLAY_NAMES = {
+    "Rainfall": "RAINFALL HIGH",
+    "DrainageCapacity": "DRAINAGE OVERLOAD",
+    "Flooding": "ROAD FLOODING",
+    "TrafficCongestion": "TRAFFIC CONGESTION",
+    "EmergencyDelay": "EMERGENCY DELAY",
+}
+
+# Cumulative delay from the trigger event (minutes along the chain)
+CASCADE_CUMULATIVE_DELAY = {
+    "Rainfall": 0,
+    "DrainageCapacity": 10,
+    "Flooding": 30,
+    "TrafficCongestion": 35,
+    "EmergencyDelay": 50,
+}
+
+# Available interventions per event in the cascade
+CASCADE_INTERVENTIONS = {
+    "Flooding": [
+        InterventionOption(id="deploy_pump", label="Deploy High-Capacity Pumps", target_event="Flooding", resources_required=1, resources_unit="Pump Unit"),
+        InterventionOption(id="open_drainage", label="Open Emergency Drainage Valves", target_event="Flooding", resources_required=1, resources_unit="Valve Unit"),
+    ],
+    "TrafficCongestion": [
+        InterventionOption(id="close_road", label="Close Road & Divert Traffic", target_event="TrafficCongestion", resources_required=1, resources_unit="Traffic Unit"),
+        InterventionOption(id="deploy_traffic_police", label="Deploy Traffic Police", target_event="TrafficCongestion", resources_required=2, resources_unit="Officer"),
+    ],
+    "EmergencyDelay": [
+        InterventionOption(id="dispatch_ambulance", label="Pre-position Ambulance", target_event="EmergencyDelay", resources_required=1, resources_unit="Ambulance"),
+        InterventionOption(id="clear_corridor", label="Clear Emergency Corridor", target_event="EmergencyDelay", resources_required=1, resources_unit="Corridor Unit"),
+    ],
+    "DrainageCapacity": [
+        InterventionOption(id="deploy_pump", label="Deploy High-Capacity Pumps", target_event="DrainageCapacity", resources_required=1, resources_unit="Pump Unit"),
+    ],
+    "Rainfall": [
+        InterventionOption(id="issue_advisory", label="Issue Public Advisory", target_event="Rainfall", resources_required=1, resources_unit="Unit"),
+    ],
+}
+
+
+@router.get("/event-cascade-timeline", response_model=EventCascadeTimelineResponse)
+async def get_event_cascade_timeline(zone: str = Query(..., description="Target zone")):
+    """
+    ⏱️ Event Cascade Timeline Prediction
+
+    Returns the full cascade chain showing which events have happened vs predicted,
+    with escalation times and available interventions for each predicted event.
+    """
+    try:
+        graph = get_causal_graph(zone)
+        evidence = graph.evidence.copy()
+        probs = graph.run_inference()
+
+        # Determine the trigger event (first evidence node, or first in chain)
+        trigger_event = "Rainfall"
+        for node in CASCADE_CHAIN:
+            if node in evidence:
+                trigger_event = node
+                break
+
+        # Also check DrainageCapacity explicitly
+        drain_prob = 0.0
+        try:
+            drain_result = graph.infer.query(variables=["DrainageCapacity"], evidence=evidence)
+            drain_prob = float(drain_result.values[1])  # P(Poor)
+        except Exception:
+            pass
+
+        all_probs = {
+            "Rainfall": 1.0 if "Rainfall" in evidence else 0.1,
+            "DrainageCapacity": drain_prob,
+            "Flooding": probs.get("Flooding", 0.0),
+            "TrafficCongestion": probs.get("TrafficCongestion", 0.0),
+            "EmergencyDelay": probs.get("EmergencyDelay", 0.0),
+        }
+
+        cascade_events = []
+        for node in CASCADE_CHAIN:
+            is_happened = node in evidence
+            prob = all_probs.get(node, 0.0)
+            delay = CASCADE_CUMULATIVE_DELAY.get(node, 0)
+
+            if is_happened:
+                status = "happened"
+                time_label = f"T=0 min" if node == trigger_event else f"T+{delay} min"
+            else:
+                status = "predicted"
+                time_label = f"T+{delay} min"
+
+            cascade_events.append(CascadeEventItem(
+                event_name=CASCADE_DISPLAY_NAMES.get(node, node),
+                status=status,
+                escalation_time=time_label,
+                probability=round(prob, 2),
+                delay_minutes=delay,
+            ))
+
+        # Gather interventions for predicted events
+        available_interventions = []
+        for node in CASCADE_CHAIN:
+            if node not in evidence and all_probs.get(node, 0) >= 0.2:
+                for iv in CASCADE_INTERVENTIONS.get(node, []):
+                    available_interventions.append(iv)
+
+        # Escalation risk score
+        from simulation.cascade_engine import compute_escalation_risk
+        risk_score = compute_escalation_risk(probs)
+
+        return EventCascadeTimelineResponse(
+            zone=zone,
+            trigger_event=CASCADE_DISPLAY_NAMES.get(trigger_event, trigger_event),
+            cascade_events=cascade_events,
+            available_interventions=available_interventions,
+            escalation_risk_score=risk_score,
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cascade timeline error: {str(e)}")
+
+
+# ── Projected Impact Analysis ───────────────────────────────────────────────────
+
+# Maps intervention IDs to their causal effects and display info
+INTERVENTION_REGISTRY = {
+    "deploy_pump": {
+        "label": "Deploy High-Capacity Pumps",
+        "effect": {"DrainageCapacity": "Good"},
+        "resources": 1,
+        "unit": "Pump Unit",
+    },
+    "open_drainage": {
+        "label": "Open Emergency Drainage Valves",
+        "effect": {"DrainageCapacity": "Good"},
+        "resources": 1,
+        "unit": "Valve Unit",
+    },
+    "close_road": {
+        "label": "Close Road & Divert Traffic",
+        "effect": {"TrafficCongestion": "Low"},
+        "resources": 1,
+        "unit": "Traffic Unit",
+    },
+    "deploy_traffic_police": {
+        "label": "Deploy Traffic Police",
+        "effect": {"TrafficCongestion": "Low"},
+        "resources": 2,
+        "unit": "Officer",
+    },
+    "dispatch_ambulance": {
+        "label": "Pre-position Ambulance",
+        "effect": {"EmergencyDelay": "Low"},
+        "resources": 1,
+        "unit": "Ambulance",
+    },
+    "clear_corridor": {
+        "label": "Clear Emergency Corridor",
+        "effect": {"EmergencyDelay": "Low"},
+        "resources": 1,
+        "unit": "Corridor Unit",
+    },
+    "issue_advisory": {
+        "label": "Issue Public Advisory",
+        "effect": {},
+        "resources": 1,
+        "unit": "Unit",
+    },
+}
+
+
+@router.post("/projected-impact", response_model=ProjectedImpactResponse)
+async def get_projected_impact(req: ProjectedImpactRequest):
+    """
+    📊 Projected Impact Analysis
+
+    Simulates the mathematical impact of executing a specific intervention
+    on downstream cascade probabilities using do-calculus on the Bayesian network.
+    """
+    try:
+        intervention_id = req.intervention_id
+        if intervention_id not in INTERVENTION_REGISTRY:
+            raise HTTPException(status_code=400, detail=f"Unknown intervention: {intervention_id}")
+
+        config = INTERVENTION_REGISTRY[intervention_id]
+        graph = get_causal_graph(req.zone)
+        evidence = graph.evidence.copy()
+
+        # Baseline risks
+        baseline_probs = graph.run_inference()
+        baseline_risks = {
+            "flooding": round(float(baseline_probs.get("Flooding", 0.0)), 3),
+            "traffic": round(float(baseline_probs.get("TrafficCongestion", 0.0)), 3),
+            "emergency_delay": round(float(baseline_probs.get("EmergencyDelay", 0.0)), 3),
+        }
+
+        # Apply intervention evidence (do-calculus: set the target node)
+        intervened_evidence = evidence.copy()
+        intervened_evidence.update(config["effect"])
+
+        # Compute counterfactual posteriors
+        after_risks = {}
+        for target, key in [("Flooding", "flooding"), ("TrafficCongestion", "traffic"), ("EmergencyDelay", "emergency_delay")]:
+            if target in config["effect"]:
+                # Directly intervened node -> forced to safe state
+                after_risks[key] = 0.0
+            else:
+                try:
+                    result = graph.infer.query(variables=[target], evidence=intervened_evidence)
+                    after_risks[key] = round(float(result.values[1]), 3)
+                except Exception:
+                    after_risks[key] = baseline_risks[key]
+
+        # Calculate overall risk reduction
+        total_baseline = sum(baseline_risks.values())
+        total_after = sum(after_risks.values())
+        reduction_pct = round(((total_baseline - total_after) / max(total_baseline, 0.01)) * 100, 1)
+
+        return ProjectedImpactResponse(
+            zone=req.zone,
+            target_event=req.target_event,
+            proposed_action=config["label"],
+            resources_consumed=config["resources"],
+            resources_unit=config["unit"],
+            resources_remaining="∞",
+            risk_reduction_pct=reduction_pct,
+            description=f"Executing this intervention mathematically reduces the probability of downstream cascading failures originating from this node.",
+            after_intervention_risks=after_risks,
+            baseline_risks=baseline_risks,
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Impact analysis error: {str(e)}")
+
 
 # Advanced Analytics APIs
 

@@ -4,6 +4,7 @@ from api.health_api import router as health_router
 from api.events_api import router as events_router
 from api.causal_api import router as causal_router
 from api.advanced_analytics_api import router as advanced_analytics_router
+from api.ai_engine_api import router as ai_engine_router
 
 main_router = APIRouter()
 
@@ -14,6 +15,9 @@ main_router.include_router(causal_router)
 
 # 🚀 WORLD-CLASS Advanced Analytics APIs
 main_router.include_router(advanced_analytics_router)
+
+# 🧠 AI Engine: Causal Discovery, LLM, Unknown Causes, Audit Trail
+main_router.include_router(ai_engine_router)
 
 @main_router.get("/predictions")
 async def get_predictions():

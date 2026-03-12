@@ -145,3 +145,47 @@ class CausalityAnalysisResponse(BaseModel):
     backdoor_adjustment_sets: List[List[str]]
     identification_strategy: str
     causal_graph_summary: Dict[str, Any]
+
+
+# ── Event Timeline Prediction Models ────────────────────────────────────────
+
+class CascadeEventItem(BaseModel):
+    event_name: str
+    status: str           # "happened" | "predicted"
+    escalation_time: str  # "T=0 min", "T+10 min", etc.
+    probability: float
+    delay_minutes: int
+
+class InterventionOption(BaseModel):
+    id: str
+    label: str
+    target_event: str
+    resources_required: int
+    resources_unit: str
+
+class EventCascadeTimelineResponse(BaseModel):
+    zone: str
+    trigger_event: str
+    cascade_events: List[CascadeEventItem]
+    available_interventions: List[InterventionOption]
+    escalation_risk_score: str
+
+
+# ── Projected Impact Analysis Models ────────────────────────────────────────
+
+class ProjectedImpactRequest(BaseModel):
+    zone: str
+    target_event: str
+    intervention_id: str
+
+class ProjectedImpactResponse(BaseModel):
+    zone: str
+    target_event: str
+    proposed_action: str
+    resources_consumed: int
+    resources_unit: str
+    resources_remaining: Optional[str] = None
+    risk_reduction_pct: float
+    description: str
+    after_intervention_risks: Dict[str, float]
+    baseline_risks: Dict[str, float]
