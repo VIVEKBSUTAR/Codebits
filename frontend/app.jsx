@@ -52,7 +52,7 @@ const ZONE_DEFS = [
 const EVENT_TYPES = ["rainfall", "construction", "accident", "drainage_failure"]
 const SEVERITIES  = ["low", "medium", "high"]
 
-const API_BASE = "/api"
+const API_BASE = "https://ai-city-management.onrender.com"
 const EVENT_TYPE_MAP = { drainage_failure: "flood" }
 
 // Sub-zone precise locations for targeted focusing (ready for real-time API coordinates)

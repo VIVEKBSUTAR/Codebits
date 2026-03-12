@@ -40,7 +40,10 @@ app = FastAPI(title="City-Scale Event Causality Engine", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "https://ai-city-management.vercel.app",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
