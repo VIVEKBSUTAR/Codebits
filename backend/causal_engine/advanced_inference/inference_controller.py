@@ -127,7 +127,7 @@ class JunctionTreeInference:
     def _triangulate_graph(self, graph: nx.Graph) -> nx.Graph:
         """Triangulate graph using minimum fill-in heuristic"""
         triangulated = graph.copy()
-        elimination_order = list(nx.lexicographic_product(graph, [graph]))
+        elimination_order = sorted(graph.nodes())
 
         # Simple triangulation (in practice, use more sophisticated algorithms)
         for node in elimination_order:

@@ -533,7 +533,7 @@ def recalculate_timeline_with_sandbox(zone: str, simulated_evidence: Dict[str, s
         except:
             pass
 
-    t_zero = datetime.datetime.now()
+    t_zero = datetime.now()
     projected_times = {}
 
     # Calculate propagation times
@@ -654,7 +654,7 @@ def recalculate_timeline_with_sandbox(zone: str, simulated_evidence: Dict[str, s
         if drain_prob >= 0.40:
              significant_nodes["DrainageCapacity"] = drain_prob
     
-    t_zero = datetime.datetime.now()
+    t_zero = datetime.now()
     projected_times = {}
 
     # Calculate propagation times (BFS from counterfactual active evidence)
@@ -704,9 +704,9 @@ def simulate_intervention(zone: str, intervention_action: str) -> InterventionRe
     baseline_timeline = baseline_timeline_model.predicted_events
 
     # 2. Lookup Intervention Effects
-    if intervention_action not in INTERVENTION_EFFECTS:
+    if intervention_action not in LEGACY_INTERVENTION_EFFECTS:
         raise ValueError(f"Unknown Intervention: {intervention_action}")
-    effect_evidence = INTERVENTION_EFFECTS[intervention_action]
+    effect_evidence = LEGACY_INTERVENTION_EFFECTS[intervention_action]
 
     # 3. Create Sandbox Evidence
     simulated_evidence = current_evidence.copy()
